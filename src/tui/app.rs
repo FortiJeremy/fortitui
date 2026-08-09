@@ -81,7 +81,24 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.toggle(Screen::Help),
-            KeyCode::Esc => self.navigate(Screen::Dashboard),
+            KeyCode::Esc => {
+                // First close the interface detail (if open), then leave the screen.
+                if self.screen == Screen::Interfaces {
+                    let exited = {
+                        let mut st = self.state.lock().unwrap();
+                        if st.iface_detail {
+                            st.iface_detail = false;
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if exited {
+                        return;
+                    }
+                }
+                self.navigate(Screen::Dashboard);
+            }
             KeyCode::Char('r') => self.refresh(),
             KeyCode::Char('i') => self.navigate(Screen::Interfaces),
             KeyCode::Char('o') => self.navigate(Screen::System),
@@ -93,6 +110,37 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             KeyCode::Char('e') => self.navigate(Screen::Events),
             KeyCode::Char('d') => {
                 // Diagnostics screen lands later.
+            }
+            KeyCode::Up | KeyCode::Down | KeyCode::Enter => self.interfaces_nav(key),
+            _ => {}
+        }
+    }
+
+    /// Up/Down move the interface selection; Enter toggles the detail pane.
+    fn interfaces_nav(&mut self, key: KeyEvent) {
+        if self.screen != Screen::Interfaces {
+            return;
+        }
+        let mut st = self.state.lock().unwrap();
+        match key.code {
+            KeyCode::Up => {
+                if !st.iface_detail {
+                    st.iface_sel = st.iface_sel.saturating_sub(1);
+                }
+            }
+            KeyCode::Down => {
+                if !st.iface_detail {
+                    let len = st.interfaces.as_ref().map(|v| v.len()).unwrap_or(0);
+                    if len > 0 && st.iface_sel + 1 < len {
+                        st.iface_sel += 1;
+                    }
+                }
+            }
+            KeyCode::Enter => {
+                let has = st.interfaces.as_ref().is_some_and(|v| !v.is_empty());
+                if has {
+                    st.iface_detail = !st.iface_detail;
+                }
             }
             _ => {}
         }
@@ -191,6 +239,7 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
                     for e in evs {
                         st.push_event(e, MAX_EVENTS);
                     }
+                    st.update_iface_rates(&v);
                     st.interfaces = Some(v);
                 }
                 Err(e) => st.interfaces_err = Some(e.to_string()),
