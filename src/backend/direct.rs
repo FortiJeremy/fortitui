@@ -4,11 +4,14 @@
 //! the application models. Read-only.
 
 use crate::backend::capabilities::{caps, Capabilities};
-use crate::backend::traits::{AddressFamily, FortiGateBackend};
+use crate::backend::traits::{AddressFamily, FortiGateBackend, SessionFilter};
 use crate::config::credentials;
 use crate::config::profiles::Profile;
 use crate::fortigate::{endpoints, normalize, FortiGateClient};
-use crate::models::{BgpState, InterfaceStatus, IpsecTunnel, Route, SdwanState, SystemStatus};
+use crate::models::{
+    BgpState, FirewallPolicy, FirewallSession, InterfaceStatus, IpsecTunnel, Route, SdwanState,
+    SystemStatus,
+};
 use anyhow::Result;
 
 #[derive(Clone)]
@@ -77,6 +80,60 @@ impl FortiGateBackend for DirectBackend {
             Ok(raw) => Ok(normalize::bgp_neighbors(&raw)?),
             Err(_) => Ok(BgpState::default()),
         }
+    }
+
+    async fn sessions(&self, filter: SessionFilter) -> Result<Vec<FirewallSession>> {
+        // `/firewall/sessions` requires a `count` query param (range 20-1000)
+        // and supports server-side filtering. Pass the filter through where
+        // present, then apply a cheap local retain as a safety net.
+        let mut params: Vec<(&str, String)> = vec![
+            ("count", "1000".to_string()),
+            ("ip_version", "ipboth".to_string()),
+        ];
+        if let Some(src) = filter.src.as_deref() {
+            params.push(("srcaddr", src.to_string()));
+        }
+        if let Some(dst) = filter.dst.as_deref() {
+            params.push(("dstaddr", dst.to_string()));
+        }
+        if let Some(proto) = filter.proto.as_deref() {
+            params.push(("protocol", proto.to_string()));
+        }
+        if let Some(policy) = filter.policy {
+            params.push(("policyid", policy.to_string()));
+        }
+        let owned: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let raw = self
+            .client
+            .get_query(endpoints::firewall::SESSIONS, &owned)
+            .await?;
+        let mut sessions = normalize::sessions(&raw)?;
+        if let Some(src) = filter.src.as_deref() {
+            sessions.retain(|s| s.src.contains(src));
+        }
+        if let Some(dst) = filter.dst.as_deref() {
+            sessions.retain(|s| s.dst.contains(dst));
+        }
+        if let Some(proto) = filter.proto.as_deref() {
+            sessions.retain(|s| s.proto.eq_ignore_ascii_case(proto));
+        }
+        if let Some(policy) = filter.policy {
+            sessions.retain(|s| s.policy == Some(policy));
+        }
+        Ok(sessions)
+    }
+
+    async fn policies(&self) -> Result<Vec<FirewallPolicy>> {
+        let raw = self.client.get(endpoints::firewall::POLICY).await?;
+        normalize::policies(&raw)
+    }
+
+    async fn route_lookup(&self, destination: &str) -> Result<Vec<Route>> {
+        let raw = self
+            .client
+            .get_query(endpoints::router::LOOKUP, &[("destination", destination)])
+            .await?;
+        normalize::route_lookup(&raw)
     }
 
     async fn capabilities(&self) -> Result<Capabilities> {

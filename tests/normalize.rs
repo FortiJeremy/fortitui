@@ -68,3 +68,35 @@ fn firewall_policy_parse_placeholder() {
         .unwrap_or_default();
     assert!(!arr.is_empty());
 }
+
+#[test]
+fn sessions_parse() {
+    let v = load("firewall-sessions");
+    let s = normalize::sessions(&v).unwrap();
+    assert!(!s.is_empty());
+    // Sanity: every parsed session has addresses and a protocol.
+    assert!(s.iter().all(|x| !x.src.is_empty() && !x.dst.is_empty()));
+    assert!(s.iter().any(|x| x.bytes > 0));
+    // proto is a string in the captured fixture.
+    assert!(s.iter().any(|x| x.proto == "tcp" || x.proto == "udp"));
+}
+
+#[test]
+fn policies_parse() {
+    let v = load("firewall-policy");
+    let p = normalize::policies(&v).unwrap();
+    assert!(!p.is_empty());
+    // The operational monitor shape exposes id/hit/bytes/sessions.
+    assert!(p.iter().any(|x| x.id > 0));
+    assert!(p.iter().any(|x| x.hit_count > 0));
+}
+
+#[test]
+fn route_lookup_parse() {
+    let v = load("router-lookup");
+    let r = normalize::route_lookup(&v).unwrap();
+    assert!(!r.is_empty());
+    // Lookup entries nest under results.entries[] and carry family/protocol.
+    assert!(r.iter().any(|x| !x.prefix.is_empty()));
+    assert!(r.iter().any(|x| x.family == "ipv4"));
+}

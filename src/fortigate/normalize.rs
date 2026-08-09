@@ -304,3 +304,143 @@ pub fn routes(v: &Value, family: &str) -> Result<Vec<Route>> {
     }
     Ok(out)
 }
+
+/// Parse `firewall/sessions` → `results.details[]` into `FirewallSession`s.
+pub fn sessions(v: &Value) -> Result<Vec<FirewallSession>> {
+    let mut out = Vec::new();
+    let arr = v
+        .get("results")
+        .and_then(|r| r.get("details"))
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for s in arr {
+        let bytes = s
+            .get("sentbyte")
+            .and_then(|b| b.as_u64())
+            .unwrap_or(0)
+            .saturating_add(s.get("rcvdbyte").and_then(|b| b.as_u64()).unwrap_or(0));
+        let packets = s
+            .get("tx_packets")
+            .and_then(|b| b.as_u64())
+            .unwrap_or(0)
+            .saturating_add(s.get("rx_packets").and_then(|b| b.as_u64()).unwrap_or(0));
+        let proto = match s.get("proto") {
+            Some(p) if p.is_string() => p.as_str().unwrap_or("").to_string(),
+            Some(p) => p.to_string(),
+            None => String::new(),
+        };
+        out.push(FirewallSession {
+            src: s
+                .get("saddr")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            dst: s
+                .get("daddr")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            src_port: s
+                .get("sport")
+                .and_then(|x| x.as_u64())
+                .map(|x| x as u16)
+                .unwrap_or(0),
+            dst_port: s
+                .get("dport")
+                .and_then(|x| x.as_u64())
+                .map(|x| x as u16)
+                .unwrap_or(0),
+            proto,
+            policy: s.get("policyid").and_then(|x| x.as_u64()).map(|x| x as u32),
+            interface: s
+                .get("srcintf")
+                .and_then(|x| x.as_str())
+                .map(|x| x.to_string()),
+            bytes,
+            packets,
+            age_secs: s.get("duration").and_then(|x| x.as_u64()).unwrap_or(0),
+        });
+    }
+    Ok(out)
+}
+
+/// Parse `firewall/policy` → `results[]` into `FirewallPolicy`s (operational
+/// fields only; name/action/address references come from config endpoints and
+/// are intentionally left empty here).
+pub fn policies(v: &Value) -> Result<Vec<FirewallPolicy>> {
+    let mut out = Vec::new();
+    let arr = v
+        .get("results")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for p in arr {
+        out.push(FirewallPolicy {
+            id: p
+                .get("policyid")
+                .and_then(|x| x.as_u64())
+                .map(|x| x as u32)
+                .unwrap_or(0),
+            hit_count: p.get("hit_count").and_then(|x| x.as_u64()).unwrap_or(0),
+            bytes: p.get("bytes").and_then(|x| x.as_u64()).unwrap_or(0),
+            sessions: p
+                .get("active_sessions")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(0),
+            ..Default::default()
+        });
+    }
+    Ok(out)
+}
+
+/// Parse `router/lookup` → `results.entries[]` into `Route`s.
+pub fn route_lookup(v: &Value) -> Result<Vec<Route>> {
+    let mut out = Vec::new();
+    let arr = v
+        .get("results")
+        .and_then(|r| r.get("entries"))
+        .and_then(|e| e.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for r in arr {
+        let ipv = r.get("ip_version").and_then(|x| x.as_u64()).unwrap_or(4);
+        let family = if ipv == 6 { "ipv6" } else { "ipv4" };
+        let protocol = r
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string();
+        let origin = r
+            .get("origin")
+            .and_then(|o| o.as_str())
+            .unwrap_or("")
+            .to_string();
+        let proto = if origin == "sd-wan" || origin == "sdwan" {
+            "sd-wan".to_string()
+        } else {
+            protocol
+        };
+        out.push(Route {
+            prefix: r
+                .get("ip_mask")
+                .and_then(|i| i.as_str())
+                .unwrap_or("")
+                .to_string(),
+            family: family.to_string(),
+            protocol: proto,
+            next_hop: r
+                .get("gateway")
+                .and_then(|g| g.as_str())
+                .map(|s| s.to_string()),
+            interface: r
+                .get("interface")
+                .and_then(|i| i.as_str())
+                .map(|s| s.to_string()),
+            distance: r.get("distance").and_then(|d| d.as_u64()).map(|d| d as u32),
+            metric: r.get("metric").and_then(|m| m.as_u64()).map(|m| m as u32),
+            active: true,
+        });
+    }
+    Ok(out)
+}

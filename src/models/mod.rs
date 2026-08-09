@@ -13,7 +13,7 @@ pub mod vpn;
 
 pub use bgp::{BgpNeighbor, BgpState};
 pub use events::Event;
-pub use firewall::FirewallPolicy;
+pub use firewall::{FirewallPolicy, FirewallSession};
 pub use interface::{InterfaceStatus, InterfaceType, LinkState};
 pub use routing::Route;
 pub use sdwan::{SdwanHealthCheck, SdwanMember, SdwanState};

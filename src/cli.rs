@@ -58,6 +58,15 @@ pub enum Command {
     Vpn,
     /// Show routing table (non-TUI).
     Routes,
+    /// Show active firewall sessions (non-TUI).
+    Sessions,
+    /// Show firewall policy counters (non-TUI).
+    Policies,
+    /// Best-route lookup for a destination (non-TUI).
+    Lookup {
+        /// Destination IP (IPv4 or IPv6).
+        destination: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -103,6 +112,11 @@ pub async fn run(args: Args) -> Result<()> {
         Some(Command::Sdwan) => run_connect(args.profile, insecure, json, "sdwan").await,
         Some(Command::Vpn) => run_connect(args.profile, insecure, json, "vpn").await,
         Some(Command::Routes) => run_connect(args.profile, insecure, json, "routes").await,
+        Some(Command::Sessions) => run_connect(args.profile, insecure, json, "sessions").await,
+        Some(Command::Policies) => run_connect(args.profile, insecure, json, "policies").await,
+        Some(Command::Lookup { destination }) => {
+            run_lookup(args.profile, insecure, json, &destination).await
+        }
         None => Err(anyhow!(
             "Interactive TUI not yet implemented. Use a subcommand (e.g. `fortitui status --profile <name>`)"
         )),
@@ -240,7 +254,76 @@ async fn run_connect(
                 }
             }
         }
+        "sessions" => {
+            let s = b.sessions(Default::default()).await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&s)?);
+            } else {
+                for s in s {
+                    println!(
+                        "{:<15}:{:<5} -> {:<15}:{:<5} {:<4} pol={:<4} {:<6} {:<8} {}s",
+                        s.src,
+                        s.src_port,
+                        s.dst,
+                        s.dst_port,
+                        s.proto,
+                        s.policy.map_or("--".into(), |p| p.to_string()),
+                        fmt_bytes(s.bytes),
+                        fmt_bytes(s.packets),
+                        s.age_secs,
+                    );
+                }
+            }
+        }
+        "policies" => {
+            let p = b.policies().await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&p)?);
+            } else {
+                for p in p {
+                    println!(
+                        "{:<4} hits={:<10} bytes={:<12} sessions={}",
+                        p.id,
+                        p.hit_count,
+                        fmt_bytes(p.bytes),
+                        p.sessions,
+                    );
+                }
+            }
+        }
         _ => unreachable!(),
+    }
+    Ok(())
+}
+
+/// Best-route lookup for a destination (non-TUI).
+async fn run_lookup(
+    profile: Option<String>,
+    insecure: bool,
+    json: bool,
+    destination: &str,
+) -> Result<()> {
+    let name = profile.ok_or_else(|| anyhow!("--profile <name> is required for this command"))?;
+    let b = backend(&name, insecure).await?;
+    let r = b.route_lookup(destination).await?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&r)?);
+        return Ok(());
+    }
+    if r.is_empty() {
+        println!("No route found for {destination}");
+        return Ok(());
+    }
+    for r in r {
+        println!(
+            "{:<20} {:<10} {:<16} {:<10} d={} m={}",
+            r.prefix,
+            r.protocol,
+            r.next_hop.as_deref().unwrap_or("--"),
+            r.interface.as_deref().unwrap_or("--"),
+            r.distance.map_or(0, |d| d),
+            r.metric.map_or(0, |m| m),
+        );
     }
     Ok(())
 }

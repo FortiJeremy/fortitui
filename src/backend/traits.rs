@@ -4,7 +4,10 @@
 //! Phase 1 implements `DirectBackend` against a single FortiGate.
 
 use crate::backend::capabilities::Capabilities;
-use crate::models::{BgpState, InterfaceStatus, IpsecTunnel, Route, SdwanState, SystemStatus};
+use crate::models::{
+    BgpState, FirewallPolicy, FirewallSession, InterfaceStatus, IpsecTunnel, Route, SdwanState,
+    SystemStatus,
+};
 use anyhow::Result;
 
 /// Address family for routing lookups.
@@ -31,5 +34,11 @@ pub trait FortiGateBackend: Send + Sync {
     async fn vpn(&self) -> Result<Vec<IpsecTunnel>>;
     async fn routes(&self, family: AddressFamily) -> Result<Vec<Route>>;
     async fn bgp(&self) -> Result<BgpState>;
+    /// Active firewall sessions, optionally filtered.
+    async fn sessions(&self, filter: SessionFilter) -> Result<Vec<FirewallSession>>;
+    /// Firewall policies with operational counters (hit/bytes/sessions).
+    async fn policies(&self) -> Result<Vec<FirewallPolicy>>;
+    /// Best-route lookup for a destination (IPv4 or IPv6).
+    async fn route_lookup(&self, destination: &str) -> Result<Vec<Route>>;
     async fn capabilities(&self) -> Result<Capabilities>;
 }

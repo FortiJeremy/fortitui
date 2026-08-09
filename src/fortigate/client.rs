@@ -43,20 +43,43 @@ impl FortiGateClient {
     /// to the TUI directly, only after normalization.
     pub async fn get(&self, endpoint: &str) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base, endpoint);
-        debug!("GET {}", endpoint);
+        self.send(&url).await
+    }
+
+    /// Perform a GET with URL-encoded query parameters (e.g. route lookup's
+    /// `?destination=`). `params` is an ordered list of `(key, value)` pairs.
+    pub async fn get_query(
+        &self,
+        endpoint: &str,
+        params: &[(&str, &str)],
+    ) -> Result<serde_json::Value> {
+        let base = format!("{}{}", self.base, endpoint);
+        let url = if params.is_empty() {
+            base
+        } else {
+            reqwest::Url::parse_with_params(&base, params.iter().map(|(k, v)| (*k, *v)))
+                .map_err(|e| anyhow!("invalid query URL for {endpoint}: {e}"))?
+                .to_string()
+        };
+        self.send(&url).await
+    }
+
+    /// Shared request/parse path for `get` and `get_query`.
+    async fn send(&self, url: &str) -> Result<serde_json::Value> {
+        debug!("GET {url}");
         let resp = self
             .client
-            .get(&url)
+            .get(url)
             .bearer_auth(&self.token)
             .send()
             .await
-            .map_err(|e| anyhow!("HTTP error for {endpoint}: {e}"))?;
+            .map_err(|e| anyhow!("HTTP error for {url}: {e}"))?;
 
         let status = resp.status();
         let text = resp
             .text()
             .await
-            .map_err(|e| anyhow!("read error for {endpoint}: {e}"))?;
+            .map_err(|e| anyhow!("read error for {url}: {e}"))?;
 
         if status.is_success() {
             if text.trim().is_empty() {
@@ -65,8 +88,8 @@ impl FortiGateClient {
                 // treat it as "no results" rather than failing.
                 return Ok(serde_json::Value::Null);
             }
-            let body: serde_json::Value = serde_json::from_str(&text)
-                .map_err(|e| anyhow!("invalid JSON from {endpoint}: {e}"))?;
+            let body: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| anyhow!("invalid JSON from {url}: {e}"))?;
             return Ok(body);
         }
 
@@ -88,7 +111,7 @@ impl FortiGateClient {
                 }
             });
         Err(anyhow!(
-            "FortiGate returned HTTP {} ({msg}) for {endpoint}{}",
+            "FortiGate returned HTTP {} ({msg}) for {url}{}",
             status.as_u16(),
             if code.is_empty() {
                 String::new()
