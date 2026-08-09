@@ -78,9 +78,15 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
         if key.kind != KeyEventKind::Press {
             return;
         }
+        // While a text input (route lookup) is active, swallow all keys.
+        if self.state.lock().unwrap().input_mode {
+            self.handle_input(key);
+            return;
+        }
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.toggle(Screen::Help),
+            KeyCode::Char('l') => self.start_lookup(),
             KeyCode::Esc => {
                 // First close the interface detail (if open), then leave the screen.
                 if self.screen == Screen::Interfaces {
@@ -144,6 +150,74 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             }
             _ => {}
         }
+    }
+
+    /// Route lookup input mode handler (spec §27).
+    fn handle_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                let mut st = self.state.lock().unwrap();
+                st.input_mode = false;
+                st.input.clear();
+            }
+            KeyCode::Backspace => {
+                self.state.lock().unwrap().input.pop();
+            }
+            KeyCode::Enter => {
+                let dst = {
+                    let mut st = self.state.lock().unwrap();
+                    let d = st.input.clone();
+                    st.input_mode = false;
+                    st.input.clear();
+                    d
+                };
+                self.run_lookup(&dst);
+            }
+            KeyCode::Char(c)
+                if c.is_alphanumeric() || matches!(c, '.' | ':' | '/' | '-' | '_' | ' ') =>
+            {
+                self.state.lock().unwrap().input.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    /// Open the route lookup input on the Routing screen.
+    fn start_lookup(&mut self) {
+        if self.screen != Screen::Routing {
+            return;
+        }
+        let mut st = self.state.lock().unwrap();
+        st.input_mode = true;
+        st.input.clear();
+        st.lookup = None;
+        st.lookup_err = None;
+    }
+
+    /// Async route lookup for a destination, writing results to shared state.
+    fn run_lookup(&self, destination: &str) {
+        if destination.trim().is_empty() {
+            let mut st = self.state.lock().unwrap();
+            st.lookup = Some(Vec::new());
+            return;
+        }
+        let b = self.backend.clone();
+        let s = self.state.clone();
+        let dst = destination.to_string();
+        tokio::spawn(async move {
+            let r = b.route_lookup(&dst).await;
+            let mut st = s.lock().unwrap();
+            match r {
+                Ok(v) => {
+                    st.lookup = Some(v);
+                    st.lookup_err = None;
+                }
+                Err(e) => {
+                    st.lookup = None;
+                    st.lookup_err = Some(e.to_string());
+                }
+            }
+        });
     }
 
     fn toggle(&mut self, screen: Screen) {

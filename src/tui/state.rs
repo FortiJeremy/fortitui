@@ -57,6 +57,11 @@ pub struct AppState {
     pub sessions_err: Option<String>,
     pub policies: Option<Vec<FirewallPolicy>>,
     pub policies_err: Option<String>,
+    /// Route lookup UI state (spec §27).
+    pub input: String,
+    pub input_mode: bool,
+    pub lookup: Option<Vec<Route>>,
+    pub lookup_err: Option<String>,
     /// Rolling in-memory event/state-transition log (spec §36).
     pub events: Vec<Event>,
     /// Per-interface throughput history (spec §20).

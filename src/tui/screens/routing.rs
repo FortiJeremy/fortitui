@@ -50,26 +50,105 @@ fn route_row(r: &Route) -> Row<'static> {
 
 pub fn draw(state: &AppState, frame: &mut Frame) {
     let area = frame.area();
+
+    // Dynamic layout: input field and/or lookup results appear only when active.
+    let mut cons: Vec<Constraint> = vec![Constraint::Length(1)]; // status
+    if state.input_mode {
+        cons.push(Constraint::Length(3)); // input field
+    }
+    if state.lookup.is_some() || state.lookup_err.is_some() {
+        cons.push(Constraint::Length(5)); // lookup results
+    }
+    cons.push(Constraint::Min(6)); // routes table
+    cons.push(Constraint::Min(3)); // BGP table
+    cons.push(Constraint::Length(1)); // hint
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // status
-            Constraint::Min(6),    // routes table
-            Constraint::Min(3),    // BGP table
-            Constraint::Length(1), // hint
-        ])
+        .constraints(cons)
         .split(area);
-
-    draw_status(state, frame, chunks[0]);
-    draw_routes(state, frame, chunks[1]);
-    draw_bgp(state, frame, chunks[2]);
+    let mut i = 0;
+    draw_status(state, frame, chunks[i]);
+    i += 1;
+    if state.input_mode {
+        draw_lookup_input(state, frame, chunks[i]);
+        i += 1;
+    }
+    if state.lookup.is_some() || state.lookup_err.is_some() {
+        draw_lookup_results(state, frame, chunks[i]);
+        i += 1;
+    }
+    draw_routes(state, frame, chunks[i]);
+    i += 1;
+    draw_bgp(state, frame, chunks[i]);
+    i += 1;
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            " [Esc] back   [?] help   [r] refresh",
+            " [Esc] back   [?] help   [l] route lookup   [r] refresh",
             Style::default().fg(Color::DarkGray),
         ))),
-        chunks[3],
+        chunks[i],
     );
+}
+
+fn draw_lookup_input(state: &AppState, frame: &mut Frame, area: ratatui::layout::Rect) {
+    let b = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled("ROUTE LOOKUP", header()));
+    let line = Line::from(vec![
+        Span::styled("Destination: ", Style::default().fg(Color::Cyan)),
+        Span::styled(
+            format!("{}▌", state.input),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(line).block(b), area);
+}
+
+fn draw_lookup_results(state: &AppState, frame: &mut Frame, area: ratatui::layout::Rect) {
+    let b = Block::default()
+        .borders(Borders::ALL)
+        .title(Span::styled("LOOKUP RESULT", header()));
+    let inner = b.inner(area);
+    frame.render_widget(b, area);
+
+    let mut lines: Vec<Line> = Vec::new();
+    if let Some(err) = &state.lookup_err {
+        lines.push(Line::from(Span::styled(
+            format!("Error: {err}"),
+            Style::default().fg(Color::Red),
+        )));
+    } else if let Some(routes) = &state.lookup {
+        if routes.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "No route found for this destination.",
+                Style::default().fg(Color::Yellow),
+            )));
+        } else {
+            for r in routes {
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{:<20}", r.prefix),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::styled(format!("{:<10}", r.protocol), Style::default()),
+                    Span::raw("→ "),
+                    Span::styled(
+                        r.next_hop.clone().unwrap_or_else(|| "--".into()),
+                        Style::default().fg(Color::White),
+                    ),
+                    Span::raw(" via "),
+                    Span::styled(
+                        r.interface.clone().unwrap_or_else(|| "--".into()),
+                        Style::default(),
+                    ),
+                ]));
+            }
+        }
+    }
+    frame.render_widget(Paragraph::new(lines).block(Block::default()), inner);
 }
 
 fn draw_status(state: &AppState, frame: &mut Frame, area: Rect) {
