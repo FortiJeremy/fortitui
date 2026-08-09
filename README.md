@@ -61,7 +61,7 @@ fortitui profile add
 #   profiles:
 #     leatherleaf:
 #       type: direct
-#       host: 172.22.128.255
+#       host: 10.0.0.1
 #       port: 443
 #       verify_tls: false   # lab only; never disable in production
 #       credential: leatherleaf

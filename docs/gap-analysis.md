@@ -85,7 +85,7 @@ Linux in phase-1, mac/windows will come either in phase 1.5, or else after phase
 
 ### 2.6 Testing / lab
 19. **Live test FortiGate availability** — is there a physical/lab FortiGate available (model(s), FortiOS version(s), credentials, network reachability from dev)? Needed for Milestone 2+ and §54 live tests.
-Yes, 2 devices available - Preferred test platform at 172.22.129.1, but if live data is needed there is a production fortigate at 172.22.128.255
+Yes, 2 devices available - Preferred test platform at 10.0.0.2, but if live data is needed there is a production fortigate at 10.0.0.1
 
 20. **Fixture capture workflow** — how sanitized real API responses are captured & stored (§55) — script, which model states, update cadence per FortiOS release.
 provide recommendations as needed.
@@ -241,7 +241,7 @@ Fill in when a live test target is provisioned. **Do not paste secrets/private k
 - [x] **Q18. Platforms** — Linux only for Phase 1; macOS/Windows Phase 1.5+.
 
 ### F. Testing / lab
-- [x] **Q19. Live test FortiGate** — test 172.22.129.1 (DEV), prod 172.22.128.255 (PROD, for data-gen).
+- [x] **Q19. Live test FortiGate** — test 10.0.0.2 (DEV), prod 10.0.0.1 (PROD, for data-gen).
 - [x] **Q20. Fixture capture workflow** — captured live from PROD v8.0.1 into `fixtures/fortios-8.0/`.
 - [x] **Q21. FortiManager Phase 3** — deferred until after Phase 1.
 

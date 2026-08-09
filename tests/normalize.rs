@@ -14,7 +14,7 @@ fn system_status_parses() {
     let v = load("system-status");
     let s = normalize::system_status(&v).unwrap();
     assert_eq!(s.model, "FG121G");
-    assert_eq!(s.hostname, "Leatherleaf-121G");
+    assert_eq!(s.hostname, "FortiGate-A");
     assert!(!s.serial.is_empty());
 }
 

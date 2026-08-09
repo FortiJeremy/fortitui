@@ -85,7 +85,7 @@ For example:
                           │
                           ▼
                  ┌─────────────────┐
-                 │      Argus      │
+                 │      Observation App      │
                  │                 │
                  │ DNS             │
                  │ DHCP            │
@@ -2189,7 +2189,7 @@ Recent:
 10-minute maximum: 31ms
 ```
 
-The short rolling history is operational context, not a replacement for Argus or another historical data platform.
+The short rolling history is operational context, not a replacement for Observation App or another historical data platform.
 
 ---
 

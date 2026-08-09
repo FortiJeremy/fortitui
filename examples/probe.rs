@@ -4,9 +4,7 @@ use reqwest::Client;
 
 #[tokio::main]
 async fn main() {
-    let host = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "172.22.129.1".into());
+    let host = std::env::args().nth(1).unwrap_or_else(|| "10.0.0.2".into());
     let mode = std::env::args().nth(2).unwrap_or_else(|| "auto".into());
     let token = std::env::var("FORTITUI_DEV").unwrap_or_default();
     let url = format!("https://{host}/api/v2/monitor/system/status");
