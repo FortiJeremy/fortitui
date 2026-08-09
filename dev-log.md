@@ -27,6 +27,12 @@ Single binary, no server, no database, no Docker; read-only by default.
   CPU (>90%) and memory (>85%) threshold crossings.
 - Sanitized FortiOS 8 monitor-API fixtures under `fixtures/fortios-8.0/` and
   fixture-driven unit tests.
+- **Per-profile credentials** (2026-08-09): tokens resolve per profile —
+  `profile.token` → `FORTITUI_<PROFILE>` env (derived from profile name, e.g.
+  `pve-dev` → `FORTITUI_PVE_DEV`) → OS keychain `fortitui/<profile>` (`keyring`
+  feature) → global `FORTITUI_TOKEN` fallback. New `credential set|unset <name>`
+  manage keychain entries. Previously a single global `FORTITUI_TOKEN` required
+  re-exporting when switching tokens between profiles.
 
 ### Next milestones
 
