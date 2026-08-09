@@ -63,9 +63,12 @@ cargo build --release
        credential: branch-01
    ```
 
-2. **Provide your API token** (via environment, or keychain per the section below):
+2. **Provide your API token** (via per-profile env, global env, or keychain — see
+   [Configuration & Secrets](#configuration--secrets)):
    ```bash
-   export FORTITUI_TOKEN=<token>
+   export FORTITUI_BRANCH_01=<token>   # per-profile: FORTITUI_<PROFILE>
+   # or the legacy single-token fallback:
+   # export FORTITUI_TOKEN=<token>
    ```
 
 3. **Launch the terminal UI** (offers your single profile automatically, or pass one):
@@ -84,9 +87,24 @@ cargo build --release
 ## Configuration & Secrets
 
 Profiles live in `~/.config/fortitui/profiles.yaml` (platform-conventional), and
-contain **no secrets**. Supply the API token via the `FORTITUI_TOKEN` environment
-variable, or via the OS keychain when built with the `keyring` feature
-(`cargo build --features keyring` — requires system keyring libraries on Linux).
+contain **no secrets**. API tokens are resolved **per profile** in this order:
+
+1. `token:` set explicitly in the profile YAML (discouraged — plaintext)
+2. `FORTITUI_<PROFILE>` environment variable — derived from the profile name,
+   e.g. profile `branch-01` → `FORTITUI_BRANCH_01`, profile `leatherleaf` →
+   `FORTITUI_LEATHERLEAF`. This is the preferred way to supply a token per
+   profile, so `fortitui --profile X` just works without re-exporting.
+3. OS keychain entry `fortitui/<profile>` (when built with the `keyring`
+   feature). Store one with:
+   ```bash
+   fortitui credential set branch-01   # prompts for the token
+   fortitui credential unset branch-01 # remove it
+   ```
+4. legacy global `FORTITUI_TOKEN` environment variable (single shared token)
+
+The keychain feature is opt-in: `cargo build --features keyring` (requires
+system keyring libraries on Linux). When built without it, use the environment
+variables above.
 
 - FortiTUI is **read-only by default** and does not modify FortiOS configuration.
 - `--insecure` disables TLS certificate verification — **lab/testing only, never

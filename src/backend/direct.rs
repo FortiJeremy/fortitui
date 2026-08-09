@@ -21,12 +21,16 @@ pub struct DirectBackend {
 
 impl DirectBackend {
     /// Build a DirectBackend from a profile, resolving the token.
-    pub async fn from_profile(profile: Profile, insecure: bool) -> Result<Self> {
-        let token = profile
-            .token
-            .clone()
-            .or_else(|| credentials::get(&profile.credential).ok())
-            .ok_or_else(|| anyhow::anyhow!("no API token available for {}", profile.credential))?;
+    /// `name` is the profile name, used to derive the per-profile `FORTITUI_<NAME>`
+    /// env var and the keychain entry.
+    pub async fn from_profile(profile: Profile, name: &str, insecure: bool) -> Result<Self> {
+        // Explicit plaintext override > per-profile env/keychain resolution.
+        // `credentials::get(name)` returns a precise, actionable error if no
+        // token can be found (e.g. it names the FORTITUI_<PROFILE> env var).
+        let token = match profile.token.as_deref() {
+            Some(t) if !t.is_empty() => t.to_string(),
+            _ => credentials::get(name)?,
+        };
 
         let verify_tls = profile.verify_tls && !insecure;
         let client = FortiGateClient::new(&profile.host, profile.port, token, verify_tls)?;

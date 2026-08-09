@@ -101,7 +101,10 @@ pub fn interactive_add() -> Result<String> {
     credentials::store(&name, &token)?;
     #[cfg(not(feature = "keyring"))]
     {
-        eprintln!("note: keyring disabled; token NOT persisted. Set FORTITUI_TOKEN=<api-key> when running.");
+        let env = credentials::env_var_for(&name);
+        eprintln!(
+            "note: keyring disabled; token NOT persisted. Set {env}=<api-key> (or FORTITUI_TOKEN=<api-key>) when running."
+        );
     }
 
     let mut cfg = profiles::ProfilesConfig {

@@ -12,6 +12,8 @@ use crate::config;
 use crate::models::LinkState;
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
+#[cfg(feature = "keyring")]
+use std::io::Write;
 
 /// FortiTUI — terminal console for FortiGate.
 #[derive(Parser, Debug)]
@@ -48,6 +50,11 @@ pub enum Command {
         #[command(subcommand)]
         action: ProfileAction,
     },
+    /// Store or clear a profile's API token in the OS keychain.
+    Credential {
+        #[command(subcommand)]
+        action: CredentialAction,
+    },
     /// Show system status (non-TUI).
     Status,
     /// Show interface overview (non-TUI).
@@ -81,6 +88,14 @@ pub enum ProfileAction {
     Test { name: String },
 }
 
+#[derive(Subcommand, Debug)]
+pub enum CredentialAction {
+    /// Store a profile's API token in the OS keychain (prompts for the token).
+    Set { profile: String },
+    /// Remove a profile's API token from the OS keychain.
+    Unset { profile: String },
+}
+
 /// Initialize structured logging. Only emits in debug mode.
 pub fn init_tracing(debug: bool) {
     use tracing_subscriber::{fmt, EnvFilter};
@@ -107,6 +122,7 @@ pub async fn run(args: Args) -> Result<()> {
     let json = args.json;
     match command {
         Some(Command::Profile { action }) => run_profile(insecure, action).await,
+        Some(Command::Credential { action }) => run_credential(action).await,
         Some(Command::Status) => run_connect(args.profile, insecure, json, "status").await,
         Some(Command::Interfaces) => run_connect(args.profile, insecure, json, "interfaces").await,
         Some(Command::Sdwan) => run_connect(args.profile, insecure, json, "sdwan").await,
@@ -172,11 +188,60 @@ async fn run_profile(insecure: bool, action: ProfileAction) -> Result<()> {
     }
 }
 
+/// Store or clear a profile's token in the OS keychain.
+async fn run_credential(action: CredentialAction) -> Result<()> {
+    match action {
+        CredentialAction::Set { profile } => {
+            #[cfg(feature = "keyring")]
+            {
+                print!("API token for profile '{profile}': ");
+                std::io::stdout().flush()?;
+                let mut token = String::new();
+                std::io::stdin().read_line(&mut token)?;
+                let token = token.trim();
+                if token.is_empty() {
+                    return Err(anyhow!("token required"));
+                }
+                config::credentials::store(&profile, token)?;
+                let env = config::credentials::env_var_for(&profile);
+                println!("Stored token for profile '{profile}' in the OS keychain.");
+                println!(
+                    "Unset {} (or FORTITUI_TOKEN) so the keychain entry is used.",
+                    env
+                );
+                Ok(())
+            }
+            #[cfg(not(feature = "keyring"))]
+            {
+                Err(anyhow!(
+                    "keyring support disabled — rebuild with `cargo build --features keyring` \
+                     (cannot set a token for profile '{profile}')"
+                ))
+            }
+        }
+        CredentialAction::Unset { profile } => {
+            #[cfg(feature = "keyring")]
+            {
+                config::credentials::delete(&profile)?;
+                println!("Removed token for profile '{profile}' from the OS keychain.");
+                Ok(())
+            }
+            #[cfg(not(feature = "keyring"))]
+            {
+                Err(anyhow!(
+                    "keyring support disabled — rebuild with `cargo build --features keyring` \
+                     (cannot unset a token for profile '{profile}')"
+                ))
+            }
+        }
+    }
+}
+
 /// Build a DirectBackend from the named profile.
 pub async fn backend(name: &str, insecure: bool) -> Result<DirectBackend> {
     let profile =
         config::load_profile(name).with_context(|| format!("failed to load profile '{name}'"))?;
-    DirectBackend::from_profile(profile, insecure).await
+    DirectBackend::from_profile(profile, name, insecure).await
 }
 
 /// Connect and print the requested view.
