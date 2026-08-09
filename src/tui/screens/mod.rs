@@ -5,7 +5,9 @@
 
 pub mod dashboard;
 pub mod help;
+pub mod interfaces;
 
+use crate::models::LinkState;
 use crate::tui::state::AppState;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::Frame;
@@ -15,6 +17,7 @@ use ratatui::Frame;
 pub enum Screen {
     #[default]
     Dashboard,
+    Interfaces,
     Help,
 }
 
@@ -22,6 +25,7 @@ impl Screen {
     pub fn title(self) -> &'static str {
         match self {
             Screen::Dashboard => "Dashboard",
+            Screen::Interfaces => "Interfaces",
             Screen::Help => "Help",
         }
     }
@@ -31,6 +35,7 @@ impl Screen {
 pub fn draw(screen: Screen, state: &AppState, profile: &str, frame: &mut Frame) {
     match screen {
         Screen::Dashboard => dashboard::draw(state, profile, frame),
+        Screen::Interfaces => interfaces::draw(state, frame),
         Screen::Help => help::draw(frame),
     }
 }
@@ -41,6 +46,15 @@ pub(crate) fn tag(up: bool) -> (&'static str, Style) {
         ("● UP", Style::default().fg(Color::Green))
     } else {
         ("✕ DOWN", Style::default().fg(Color::Red))
+    }
+}
+
+/// Map a `LinkState` to a tag + style.
+pub(crate) fn link_tag(link: LinkState) -> (&'static str, Style) {
+    match link {
+        LinkState::Up => ("● UP", Style::default().fg(Color::Green)),
+        LinkState::Down => ("✕ DOWN", Style::default().fg(Color::Red)),
+        LinkState::Unknown => ("? UNKNOWN", Style::default().fg(Color::Yellow)),
     }
 }
 

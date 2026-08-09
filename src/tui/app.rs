@@ -83,8 +83,8 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
                 }
             }
             KeyCode::Char('r') => self.refresh(),
-            KeyCode::Char('i')
-            | KeyCode::Char('s')
+            KeyCode::Char('i') => self.screen = Screen::Interfaces,
+            KeyCode::Char('s')
             | KeyCode::Char('v')
             | KeyCode::Char('g')
             | KeyCode::Char('d')
@@ -108,6 +108,7 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
     /// UI (spec §38). Each task writes only its own slot in the shared state.
     fn refresh(&self) {
         self.spawn_system();
+        self.spawn_interfaces();
         self.spawn_sdwan();
         self.spawn_vpn();
         self.spawn_routes();
@@ -132,6 +133,19 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             match r {
                 Ok(v) => st.system = Some(v),
                 Err(e) => st.system_err = Some(e.to_string()),
+            }
+        });
+    }
+
+    fn spawn_interfaces(&self) {
+        let b = self.backend.clone();
+        let s = self.state.clone();
+        tokio::spawn(async move {
+            let r = b.interfaces().await;
+            let mut st = s.lock().unwrap();
+            match r {
+                Ok(v) => st.interfaces = Some(v),
+                Err(e) => st.interfaces_err = Some(e.to_string()),
             }
         });
     }
