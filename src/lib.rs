@@ -8,3 +8,4 @@ pub mod cli;
 pub mod config;
 pub mod fortigate;
 pub mod models;
+pub mod tui;

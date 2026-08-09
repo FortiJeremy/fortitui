@@ -117,8 +117,30 @@ pub async fn run(args: Args) -> Result<()> {
         Some(Command::Lookup { destination }) => {
             run_lookup(args.profile, insecure, json, &destination).await
         }
-        None => Err(anyhow!(
-            "Interactive TUI not yet implemented. Use a subcommand (e.g. `fortitui status --profile <name>`)"
+        None => {
+            let name = match args.profile.clone() {
+                Some(n) => n,
+                None => select_default_profile()?,
+            };
+            tracing::debug!("entering TUI with profile '{name}'");
+            let b = backend(&name, args.insecure).await?;
+            crate::tui::run(b, name).await
+        }
+    }
+}
+
+/// Choose a profile when none was passed explicitly (spec §8): a single
+/// configured profile is offered automatically; otherwise the user must pick.
+fn select_default_profile() -> Result<String> {
+    let profiles = config::list_profiles()?;
+    match profiles.len() {
+        0 => Err(anyhow!(
+            "no profiles configured — run `fortitui profile add` first"
+        )),
+        1 => Ok(profiles[0].clone()),
+        _ => Err(anyhow!(
+            "multiple profiles configured ({}) — pass one with `--profile <name>`",
+            profiles.join(", ")
         )),
     }
 }

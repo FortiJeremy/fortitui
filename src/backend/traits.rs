@@ -9,6 +9,7 @@ use crate::models::{
     SystemStatus,
 };
 use anyhow::Result;
+use std::future::Future;
 
 /// Address family for routing lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,19 +27,23 @@ pub struct SessionFilter {
     pub policy: Option<u32>,
 }
 
-#[allow(async_fn_in_trait)]
+/// RPITIT with `+ Send` so background refresh tasks (which `tokio::spawn` with a
+/// `Send` bound) can await these futures from independent asynchronous tasks.
 pub trait FortiGateBackend: Send + Sync {
-    async fn system_status(&self) -> Result<SystemStatus>;
-    async fn interfaces(&self) -> Result<Vec<InterfaceStatus>>;
-    async fn sdwan(&self) -> Result<SdwanState>;
-    async fn vpn(&self) -> Result<Vec<IpsecTunnel>>;
-    async fn routes(&self, family: AddressFamily) -> Result<Vec<Route>>;
-    async fn bgp(&self) -> Result<BgpState>;
+    fn system_status(&self) -> impl Future<Output = Result<SystemStatus>> + Send;
+    fn interfaces(&self) -> impl Future<Output = Result<Vec<InterfaceStatus>>> + Send;
+    fn sdwan(&self) -> impl Future<Output = Result<SdwanState>> + Send;
+    fn vpn(&self) -> impl Future<Output = Result<Vec<IpsecTunnel>>> + Send;
+    fn routes(&self, family: AddressFamily) -> impl Future<Output = Result<Vec<Route>>> + Send;
+    fn bgp(&self) -> impl Future<Output = Result<BgpState>> + Send;
     /// Active firewall sessions, optionally filtered.
-    async fn sessions(&self, filter: SessionFilter) -> Result<Vec<FirewallSession>>;
+    fn sessions(
+        &self,
+        filter: SessionFilter,
+    ) -> impl Future<Output = Result<Vec<FirewallSession>>> + Send;
     /// Firewall policies with operational counters (hit/bytes/sessions).
-    async fn policies(&self) -> Result<Vec<FirewallPolicy>>;
+    fn policies(&self) -> impl Future<Output = Result<Vec<FirewallPolicy>>> + Send;
     /// Best-route lookup for a destination (IPv4 or IPv6).
-    async fn route_lookup(&self, destination: &str) -> Result<Vec<Route>>;
-    async fn capabilities(&self) -> Result<Capabilities>;
+    fn route_lookup(&self, destination: &str) -> impl Future<Output = Result<Vec<Route>>> + Send;
+    fn capabilities(&self) -> impl Future<Output = Result<Capabilities>> + Send;
 }
