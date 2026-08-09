@@ -1,98 +1,107 @@
 # FortiTUI
 
-A fast, keyboard-driven **terminal console for FortiGate** — operational monitoring, troubleshooting, and diagnostics.
+A fast, keyboard-driven **terminal console for FortiGate** — operational
+monitoring, troubleshooting, and diagnostics right from your terminal.
 
-> **FortiTUI is a terminal-based operational console for FortiGate.** It answers
-> *"What is happening right now, and how do I investigate it?"* — not another
-> historical analytics platform, GUI/CLI replacement, or config manager.
+> FortiTUI answers the question *"What is happening on my FortiGate right now,
+> and how do I investigate it?"* It is deliberately **not** a configuration
+> manager, GUI/CLI replacement, historical analytics platform, or SIEM. It
+> complements existing FortiOS tooling rather than replacing it.
 
-## Status
+## Features
 
-**Phase 1 — Direct FortiGate mode (in development).** FortiOS 8.0.x target.
-Single binary, no server, no database, no Docker required. Read-only by default.
+Read-only, keyboard-first visibility into one or more FortiGates from a single
+binary — **no server, no database, no Docker**.
 
-Working so far (non-TUI CLI backed by a real client):
-- `fortitui status` — system status (model, serial, FortiOS, CPU/mem/disk, sessions)
-- `fortitui interfaces` — interface list with link state, IP, RX/TX counters
-- `fortitui sdwan` — SD-WAN members
-- `fortitui routes` — IPv4 routing table
-- `fortitui profile add/list/remove/test` — profile management
-- `--json` on any data command for automation
+**Interactive terminal UI** (run `fortitui`):
+- **Dashboard** — overall health with a situational-awareness strip
+- **System** — model, serial, version, uptime, CPU/memory/disk, sessions
+- **Interfaces** — link state, addresses, counters, errors; select one for a live throughput graph
+- **SD-WAN** — members (state / latency / jitter / loss / SLA) and health checks, active member highlighted
+- **IPsec** — tunnel list with Phase 1/2 state, IKE version, traffic, uptime
+- **Routing / BGP** — IPv4 + IPv6 routes, BGP neighbors, and interactive **route lookup**
+- **Sessions** — active firewall sessions (source/dest, protocol, policy, traffic)
+- **Firewall Policies** — policy counters (hits / bytes / sessions)
+- **Events** — in-memory state-transition log (interface up/down, SD-WAN changes, CPU/memory thresholds)
 
-The interactive TUI (dashboard, per-view screens) and remaining views (VPN detail,
-BGP, sessions, diagnostics, events) are the next milestones.
+**Non-TUI CLI** (for scripts and automation; append `--json` for machine-readable
+output):
+- `fortitui status`, `interfaces`, `sdwan`, `vpn`, `routes`, `sessions`, `policies`
+- `fortitui lookup <destination>` — best-route lookup
+- `fortitui profile add/list/remove/test`
 
-## Architecture
+Use the same binary against **multiple FortiGate profiles**.
 
-```
-TUI (Ratatui)               <-not yet wired
-    │
-    ▼
-Backend Interface (FortiGateBackend trait)
-    │
-    ├── DirectBackend       (Phase 1 — implemented)
-    ├── ServerBackend       (Phase 2, planned)
-    └── FortiManagerBackend (Phase 3, planned)
-```
+## Requirements
 
-Data is normalized into application models (never raw FortiGate API responses),
-so the TUI is independent of how devices are accessed. Raw responses are captured
-as sanitized fixtures in `fixtures/fortios-8.0/` for offline development/tests.
+- FortiOS **8.0.x**
+- An API token from a **read-only full-admin** account
+- Linux (primary Phase 1 target; macOS/Windows planned for Phase 1.5+)
+- Rust toolchain (>= 1.75) only if building from source
 
-See `docs/spec.md` (product & technical specification) and `docs/gap-analysis.md`
-(decision checklist) for detail.
-
-## Building
-
-Requires the Rust toolchain (rustc 1.75+; tested on 1.97).
+## Install / Build
 
 ```bash
 cargo build --release
 ./target/release/fortitui --version
 ```
 
-## Quick start (Phase 1)
+## Quick start
 
-```bash
-# create a profile (prompts for host, port, API token)
-fortitui profile add
+1. **Create a profile** — either interactively:
+   ```bash
+   fortitui profile add
+   ```
+   or add `profiles.yaml` under `~/.config/fortitui/`:
+   ```yaml
+   profiles:
+     branch-01:
+       type: direct
+       host: 10.0.0.1
+       port: 443
+       verify_tls: true
+       credential: branch-01
+   ```
 
-# or drop a profiles.yaml in ~/.config/fortitui/:
-#   profiles:
-#     leatherleaf:
-#       type: direct
-#       host: 10.0.0.1
-#       port: 443
-#       verify_tls: false   # lab only; never disable in production
-#       credential: leatherleaf
+2. **Provide your API token** (via environment, or keychain per the section below):
+   ```bash
+   export FORTITUI_TOKEN=<token>
+   ```
 
-# run a non-TUI command against it (token via env unless keyring enabled)
-FORTITUI_TOKEN=<token> fortitui status --profile leatherleaf --insecure
-FORTITUI_TOKEN=<token> fortitui status --profile leatherleaf --insecure --json
-```
+3. **Launch the terminal UI** (offers your single profile automatically, or pass one):
+   ```bash
+   fortitui --profile branch-01
+   ```
+
+   Or use the CLI non-interactively:
+   ```bash
+   fortitui status --profile branch-01
+   fortitui status --profile branch-01 --json
+   fortitui interfaces --profile branch-01
+   fortitui lookup 8.8.8.8 --profile branch-01
+   ```
 
 ## Configuration & Secrets
 
-Profiles live in `~/.config/fortitui/profiles.yaml` (platform-conventional).
-**Secrets are never stored in the repo.** The API token is supplied via the
-`FORTITUI_TOKEN` environment variable, or stored in the OS keychain when built
-with the `keyring` feature (`cargo build --features keyring` — requires system
-keyring libraries on Linux).
+Profiles live in `~/.config/fortitui/profiles.yaml` (platform-conventional), and
+contain **no secrets**. Supply the API token via the `FORTITUI_TOKEN` environment
+variable, or via the OS keychain when built with the `keyring` feature
+(`cargo build --features keyring` — requires system keyring libraries on Linux).
 
-`--insecure` disables TLS certificate verification — use only for lab/testing,
-never in production.
-
-## Testing
-
-```bash
-cargo test          # unit tests driven by fixtures/fortios-8.0/
-cargo clippy        # lints
-```
+- FortiTUI is **read-only by default** and does not modify FortiOS configuration.
+- `--insecure` disables TLS certificate verification — **lab/testing only, never
+  in production.**
 
 ## Compatibility
 
 - FortiOS **8.0.x** (monitor API). See `drop/FortiOS_8/` for the API reference.
-- Linux (primary target for Phase 1). macOS/Windows planned for Phase 1.5+.
+- Linux (primary). macOS/Windows planned for Phase 1.5+.
+
+## Documentation
+
+- `docs/spec.md` — full product & technical specification
+- `docs/gap-analysis.md` — implementation decision checklist
+- `dev-log.md` — development status, architecture, and milestone log
 
 ## License
 
