@@ -77,20 +77,15 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.toggle(Screen::Help),
-            KeyCode::Esc => {
-                if self.screen != Screen::Dashboard {
-                    self.screen = Screen::Dashboard;
-                }
-            }
+            KeyCode::Esc => self.navigate(Screen::Dashboard),
             KeyCode::Char('r') => self.refresh(),
-            KeyCode::Char('i') => self.screen = Screen::Interfaces,
-            KeyCode::Char('s')
-            | KeyCode::Char('v')
-            | KeyCode::Char('g')
-            | KeyCode::Char('d')
-            | KeyCode::Char('f')
-            | KeyCode::Char('e') => {
-                // Per-domain screens land in later increments.
+            KeyCode::Char('i') => self.navigate(Screen::Interfaces),
+            KeyCode::Char('o') => self.navigate(Screen::System),
+            KeyCode::Char('s') => self.navigate(Screen::Sdwan),
+            KeyCode::Char('f') => self.navigate(Screen::Sessions),
+            KeyCode::Char('F') => self.navigate(Screen::Policies),
+            KeyCode::Char('v') | KeyCode::Char('g') | KeyCode::Char('d') | KeyCode::Char('e') => {
+                // VPN / routing / diagnostics / events screens land later.
             }
             _ => {}
         }
@@ -104,15 +99,34 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
         };
     }
 
+    /// Switch screens, immediately refreshing the target's data so it never
+    /// sits empty waiting for the next tick.
+    fn navigate(&mut self, screen: Screen) {
+        self.screen = screen;
+        self.refresh();
+    }
+
     /// Launch independent refresh tasks so one slow endpoint never stalls the
     /// UI (spec §38). Each task writes only its own slot in the shared state.
+    ///
+    /// Only the current screen's data is refreshed (spec §37, §42) — e.g. the
+    /// heavy `/firewall/sessions` payload is never pulled to render a dashboard.
     fn refresh(&self) {
-        self.spawn_system();
-        self.spawn_interfaces();
-        self.spawn_sdwan();
-        self.spawn_vpn();
-        self.spawn_routes();
-        self.spawn_bgp();
+        match self.screen {
+            Screen::Dashboard => {
+                self.spawn_system();
+                self.spawn_sdwan();
+                self.spawn_vpn();
+                self.spawn_routes();
+                self.spawn_bgp();
+            }
+            Screen::System => self.spawn_system(),
+            Screen::Interfaces => self.spawn_interfaces(),
+            Screen::Sdwan => self.spawn_sdwan(),
+            Screen::Sessions => self.spawn_sessions(),
+            Screen::Policies => self.spawn_policies(),
+            Screen::Help => {}
+        }
 
         let s = self.state.clone();
         let now = SystemTime::now()
@@ -198,6 +212,32 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             match r {
                 Ok(v) => st.bgp = Some(v),
                 Err(e) => st.bgp_err = Some(e.to_string()),
+            }
+        });
+    }
+
+    fn spawn_sessions(&self) {
+        let b = self.backend.clone();
+        let s = self.state.clone();
+        tokio::spawn(async move {
+            let r = b.sessions(Default::default()).await;
+            let mut st = s.lock().unwrap();
+            match r {
+                Ok(v) => st.sessions = Some(v),
+                Err(e) => st.sessions_err = Some(e.to_string()),
+            }
+        });
+    }
+
+    fn spawn_policies(&self) {
+        let b = self.backend.clone();
+        let s = self.state.clone();
+        tokio::spawn(async move {
+            let r = b.policies().await;
+            let mut st = s.lock().unwrap();
+            match r {
+                Ok(v) => st.policies = Some(v),
+                Err(e) => st.policies_err = Some(e.to_string()),
             }
         });
     }

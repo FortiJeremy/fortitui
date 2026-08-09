@@ -6,6 +6,10 @@
 pub mod dashboard;
 pub mod help;
 pub mod interfaces;
+pub mod policies;
+pub mod sdwan;
+pub mod sessions;
+pub mod system;
 
 use crate::models::LinkState;
 use crate::tui::state::AppState;
@@ -18,6 +22,10 @@ pub enum Screen {
     #[default]
     Dashboard,
     Interfaces,
+    System,
+    Sdwan,
+    Sessions,
+    Policies,
     Help,
 }
 
@@ -26,6 +34,10 @@ impl Screen {
         match self {
             Screen::Dashboard => "Dashboard",
             Screen::Interfaces => "Interfaces",
+            Screen::System => "System",
+            Screen::Sdwan => "SD-WAN",
+            Screen::Sessions => "Sessions",
+            Screen::Policies => "Firewall Policies",
             Screen::Help => "Help",
         }
     }
@@ -36,6 +48,10 @@ pub fn draw(screen: Screen, state: &AppState, profile: &str, frame: &mut Frame) 
     match screen {
         Screen::Dashboard => dashboard::draw(state, profile, frame),
         Screen::Interfaces => interfaces::draw(state, frame),
+        Screen::System => system::draw(state, frame),
+        Screen::Sdwan => sdwan::draw(state, frame),
+        Screen::Sessions => sessions::draw(state, frame),
+        Screen::Policies => policies::draw(state, frame),
         Screen::Help => help::draw(frame),
     }
 }
