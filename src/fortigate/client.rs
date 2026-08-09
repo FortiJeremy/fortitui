@@ -24,7 +24,8 @@ impl FortiGateClient {
             reqwest::Client::builder().danger_accept_invalid_certs(true)
         };
         let client = tls
-            .http1_only() // FortiGate API is most reliable over HTTP/1.1
+            // Allow HTTP/2 via ALPN so concurrent polling (spec §38) can use
+            // multiplexing when the FortiGate supports it. Do NOT force http1.
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
 
@@ -52,24 +53,48 @@ impl FortiGateClient {
             .map_err(|e| anyhow!("HTTP error for {endpoint}: {e}"))?;
 
         let status = resp.status();
-        let body: serde_json::Value = resp.json().await?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| anyhow!("read error for {endpoint}: {e}"))?;
 
-        // Normalize error surfaces per spec §11/§39.
         if status.is_success() {
-            Ok(body)
-        } else {
-            let msg = body
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or("error");
-            let code = body
-                .get("http_status")
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            Err(anyhow!(
-                "FortiGate returned HTTP {} ({msg}) for {endpoint} [{code}]",
-                status.as_u16()
-            ))
+            if text.trim().is_empty() {
+                // FortiGate may return 200 with an empty body (e.g. nothing to
+                // report for some endpoints). Return a null value so callers
+                // treat it as "no results" rather than failing.
+                return Ok(serde_json::Value::Null);
+            }
+            let body: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| anyhow!("invalid JSON from {endpoint}: {e}"))?;
+            return Ok(body);
         }
+
+        // Error path: try to surface the FortiGate error message even when the
+        // body isn't clean JSON (e.g. empty body, HTML, or plain text).
+        let parsed = serde_json::from_str::<serde_json::Value>(&text).ok();
+        let msg = parsed
+            .as_ref()
+            .and_then(|b| b.get("status").and_then(|s| s.as_str()))
+            .unwrap_or("request failed");
+        let code = parsed
+            .as_ref()
+            .and_then(|b| b.get("http_status").map(|v| v.to_string()))
+            .unwrap_or_else(|| {
+                if text.trim().is_empty() {
+                    String::new()
+                } else {
+                    text.chars().take(120).collect()
+                }
+            });
+        Err(anyhow!(
+            "FortiGate returned HTTP {} ({msg}) for {endpoint}{}",
+            status.as_u16(),
+            if code.is_empty() {
+                String::new()
+            } else {
+                format!(" [{code}]")
+            }
+        ))
     }
 }
