@@ -81,7 +81,11 @@ pub fn interactive_add() -> Result<String> {
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut name)?;
     let name = name.trim();
-    let name = if name.is_empty() { host.clone() } else { name.to_string() };
+    let name = if name.is_empty() {
+        host.clone()
+    } else {
+        name.to_string()
+    };
 
     let profile = profiles::Profile {
         r#type: "direct".to_string(),

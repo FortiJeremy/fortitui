@@ -61,6 +61,10 @@ fn routes_parse() {
 #[test]
 fn firewall_policy_parse_placeholder() {
     let v = load("firewall-policy");
-    let arr = v.get("results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+    let arr = v
+        .get("results")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
     assert!(!arr.is_empty());
 }

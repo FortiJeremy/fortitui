@@ -9,11 +9,29 @@ use anyhow::Result;
 use serde_json::Value;
 
 pub fn system_status(v: &Value) -> Result<SystemStatus> {
-    let serial = v.get("serial").and_then(|s| s.as_str()).unwrap_or("").to_string();
-    let version = v.get("version").and_then(|s| s.as_str()).unwrap_or("").to_string();
+    let serial = v
+        .get("serial")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let version = v
+        .get("version")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
     let build = v.get("build").map(|b| b.to_string()).unwrap_or_default();
-    let hostname = v.get("results").and_then(|r| r.get("hostname")).and_then(|h| h.as_str()).unwrap_or("").to_string();
-    let model = v.get("results").and_then(|r| r.get("model")).and_then(|m| m.as_str()).unwrap_or("").to_string();
+    let hostname = v
+        .get("results")
+        .and_then(|r| r.get("hostname"))
+        .and_then(|h| h.as_str())
+        .unwrap_or("")
+        .to_string();
+    let model = v
+        .get("results")
+        .and_then(|r| r.get("model"))
+        .and_then(|m| m.as_str())
+        .unwrap_or("")
+        .to_string();
     Ok(SystemStatus {
         hostname,
         serial,
@@ -59,12 +77,20 @@ pub fn interfaces(v: &Value) -> Result<Vec<InterfaceStatus>> {
     // results is a keyed map: { "port1": {...}, ... }
     if let Some(map) = v.get("results").and_then(|r| r.as_object()) {
         for (_key, val) in map {
-            let name = val.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+            let name = val
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
             let ip = val.get("ip").and_then(|i| i.as_str()).unwrap_or("");
             let mask = val.get("mask").and_then(|m| m.as_u64()).unwrap_or(0);
             let link = val.get("link").and_then(|l| l.as_bool()).unwrap_or(false);
             let ipv4 = if !ip.is_empty() && ip != "0.0.0.0" {
-                Some(if mask > 0 { format!("{ip}/{mask}") } else { ip.to_string() })
+                Some(if mask > 0 {
+                    format!("{ip}/{mask}")
+                } else {
+                    ip.to_string()
+                })
             } else {
                 None
             };
@@ -87,14 +113,30 @@ pub fn interfaces(v: &Value) -> Result<Vec<InterfaceStatus>> {
 
 pub fn sdwan_members(v: &Value) -> Result<Vec<SdwanMember>> {
     let mut out = Vec::new();
-    let arr = v.get("results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+    let arr = v
+        .get("results")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
     for m in arr {
-        let state = m.get("link").and_then(|l| l.as_str()).unwrap_or("down").to_string();
-        let interface = m.get("interface").and_then(|i| i.as_str()).unwrap_or("").to_string();
+        let state = m
+            .get("link")
+            .and_then(|l| l.as_str())
+            .unwrap_or("down")
+            .to_string();
+        let interface = m
+            .get("interface")
+            .and_then(|i| i.as_str())
+            .unwrap_or("")
+            .to_string();
         out.push(SdwanMember {
             name: interface.clone(),
             interface,
-            state: if state == "up" { "ACTIVE".to_string() } else { "DOWN".to_string() },
+            state: if state == "up" {
+                "ACTIVE".to_string()
+            } else {
+                "DOWN".to_string()
+            },
             tx_rate_bps: m.get("tx_bandwidth").and_then(|b| b.as_u64()),
             rx_rate_bps: m.get("rx_bandwidth").and_then(|b| b.as_u64()),
             sessions: m.get("session").and_then(|s| s.as_u64()).unwrap_or(0),
@@ -111,14 +153,24 @@ pub fn sdwan_health_check(v: &Value) -> Result<SdwanState> {
         for (check_name, members) in map {
             if let Some(mm) = members.as_object() {
                 for (member, stats) in mm {
-                    let status = stats.get("status").and_then(|s| s.as_str()).unwrap_or("").to_string();
+                    let status = stats
+                        .get("status")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let latency = stats.get("latency").and_then(|l| l.as_f64());
                     let jitter = stats.get("jitter").and_then(|j| j.as_f64());
                     let loss = stats.get("packet_loss").and_then(|l| l.as_f64());
                     checks.push(SdwanHealthCheck {
                         name: check_name.clone(),
                         member: member.clone(),
-                        status: if status == "up" { Some("PASS".to_string()) } else if status == "down" { Some("FAIL".to_string()) } else { Some(status) },
+                        status: if status == "up" {
+                            Some("PASS".to_string())
+                        } else if status == "down" {
+                            Some("FAIL".to_string())
+                        } else {
+                            Some(status)
+                        },
                         latency_ms: latency.map(|v| v as f32),
                         jitter_ms: jitter.map(|v| v as f32),
                         packet_loss_pct: loss.map(|v| v as f32),
@@ -127,18 +179,38 @@ pub fn sdwan_health_check(v: &Value) -> Result<SdwanState> {
             }
         }
     }
-    Ok(SdwanState { health_checks: checks, ..Default::default() })
+    Ok(SdwanState {
+        health_checks: checks,
+        ..Default::default()
+    })
 }
 
 pub fn ipsec_tunnels(v: &Value) -> Result<Vec<IpsecTunnel>> {
     let mut out = Vec::new();
-    let arr = v.get("results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+    let arr = v
+        .get("results")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
     for t in arr {
         out.push(IpsecTunnel {
-            name: t.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
-            phase1_state: t.get("status").and_then(|s| s.as_str()).map(|s| s.to_string()),
-            ike_version: t.get("ike_version").and_then(|s| s.as_str()).map(|s| s.to_string()),
-            remote_gateway: t.get("remote_gw").and_then(|s| s.as_str()).map(|s| s.to_string()),
+            name: t
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string(),
+            phase1_state: t
+                .get("status")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string()),
+            ike_version: t
+                .get("ike_version")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string()),
+            remote_gateway: t
+                .get("remote_gw")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string()),
             rx_bytes: t.get("rx_bytes").and_then(|b| b.as_u64()).unwrap_or(0),
             tx_bytes: t.get("tx_bytes").and_then(|b| b.as_u64()).unwrap_or(0),
             ..Default::default()
@@ -149,7 +221,11 @@ pub fn ipsec_tunnels(v: &Value) -> Result<Vec<IpsecTunnel>> {
 
 pub fn bgp_neighbors(v: &Value) -> Result<BgpState> {
     let mut state = BgpState::default();
-    state.router_id = v.get("results").and_then(|r| r.get("router_id")).and_then(|s| s.as_str()).map(|s| s.to_string());
+    state.router_id = v
+        .get("results")
+        .and_then(|r| r.get("router_id"))
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
     let arr = v
         .get("results")
         .and_then(|r| r.get("neighbors"))
@@ -159,9 +235,17 @@ pub fn bgp_neighbors(v: &Value) -> Result<BgpState> {
     for n in arr {
         let remote_as = n.get("remote_as").and_then(|v| v.as_u64());
         state.neighbors.push(crate::models::BgpNeighbor {
-            address: n.get("remote_host").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            address: n
+                .get("remote_host")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
             remote_as: remote_as.map(|a| a as u32),
-            state: n.get("state").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            state: n
+                .get("state")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
             rx_prefixes: n.get("rx_pfx").and_then(|v| v.as_u64()).unwrap_or(0),
             tx_prefixes: n.get("tx_pfx").and_then(|v| v.as_u64()).unwrap_or(0),
             ..Default::default()
@@ -172,21 +256,43 @@ pub fn bgp_neighbors(v: &Value) -> Result<BgpState> {
 
 pub fn routes(v: &Value, family: &str) -> Result<Vec<Route>> {
     let mut out = Vec::new();
-    let arr = v.get("results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+    let arr = v
+        .get("results")
+        .and_then(|r| r.as_array())
+        .cloned()
+        .unwrap_or_default();
     for r in arr {
-        let protocol = r.get("type").and_then(|t| t.as_str()).unwrap_or("").to_string();
-        let origin = r.get("origin").and_then(|o| o.as_str()).unwrap_or("").to_string();
+        let protocol = r
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string();
+        let origin = r
+            .get("origin")
+            .and_then(|o| o.as_str())
+            .unwrap_or("")
+            .to_string();
         let proto = if origin == "sd-wan" || origin == "sdwan" {
             "sd-wan".to_string()
         } else {
             protocol
         };
         out.push(Route {
-            prefix: r.get("ip_mask").and_then(|i| i.as_str()).unwrap_or("").to_string(),
+            prefix: r
+                .get("ip_mask")
+                .and_then(|i| i.as_str())
+                .unwrap_or("")
+                .to_string(),
             family: family.to_string(),
             protocol: proto,
-            next_hop: r.get("gateway").and_then(|g| g.as_str()).map(|s| s.to_string()),
-            interface: r.get("interface").and_then(|i| i.as_str()).map(|s| s.to_string()),
+            next_hop: r
+                .get("gateway")
+                .and_then(|g| g.as_str())
+                .map(|s| s.to_string()),
+            interface: r
+                .get("interface")
+                .and_then(|i| i.as_str())
+                .map(|s| s.to_string()),
             distance: r.get("distance").and_then(|d| d.as_u64()).map(|d| d as u32),
             metric: r.get("metric").and_then(|m| m.as_u64()).map(|m| m as u32),
             ..Default::default()

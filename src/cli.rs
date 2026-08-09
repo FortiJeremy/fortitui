@@ -73,18 +73,23 @@ pub enum ProfileAction {
 
 /// Initialize structured logging. Only emits in debug mode.
 pub fn init_tracing(debug: bool) {
-    use tracing_subscriber::{EnvFilter, fmt};
+    use tracing_subscriber::{fmt, EnvFilter};
     if debug {
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("fortitui=debug"));
-        fmt().with_env_filter(filter).with_max_level(tracing::Level::DEBUG).init();
+        let filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("fortitui=debug"));
+        fmt()
+            .with_env_filter(filter)
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
     }
 }
 
 /// Top-level command dispatch.
 pub async fn run(args: Args) -> Result<()> {
     if args.profile_select {
-        return Err(anyhow!("interactive profile selection is not yet implemented"));
+        return Err(anyhow!(
+            "interactive profile selection is not yet implemented"
+        ));
     }
 
     let command = args.command; // move command out of args
@@ -132,15 +137,19 @@ async fn run_profile(insecure: bool, action: ProfileAction) -> Result<()> {
 
 /// Build a DirectBackend from the named profile.
 pub async fn backend(name: &str, insecure: bool) -> Result<DirectBackend> {
-    let profile = config::load_profile(name)
-        .with_context(|| format!("failed to load profile '{name}'"))?;
+    let profile =
+        config::load_profile(name).with_context(|| format!("failed to load profile '{name}'"))?;
     DirectBackend::from_profile(profile, insecure).await
 }
 
 /// Connect and print the requested view.
-async fn run_connect(profile: Option<String>, insecure: bool, json: bool, view: &str) -> Result<()> {
-    let name = profile
-        .ok_or_else(|| anyhow!("--profile <name> is required for this command"))?;
+async fn run_connect(
+    profile: Option<String>,
+    insecure: bool,
+    json: bool,
+    view: &str,
+) -> Result<()> {
+    let name = profile.ok_or_else(|| anyhow!("--profile <name> is required for this command"))?;
     let b = backend(&name, insecure).await?;
 
     match view {
@@ -167,7 +176,11 @@ async fn run_connect(profile: Option<String>, insecure: bool, json: bool, view: 
                     println!(
                         "{:<12} {} {:>12} {:>14} {:>14}",
                         i.name,
-                        if i.link_state == LinkState::Up { "UP" } else { "DOWN" },
+                        if i.link_state == LinkState::Up {
+                            "UP"
+                        } else {
+                            "DOWN"
+                        },
                         i.ipv4.as_deref().unwrap_or("--"),
                         fmt_bytes(i.rx_bytes),
                         fmt_bytes(i.tx_bytes),
@@ -187,7 +200,8 @@ async fn run_connect(profile: Option<String>, insecure: bool, json: bool, view: 
                         m.state,
                         m.latency_ms.map_or("--".into(), |v| format!("{v:.0}ms")),
                         m.jitter_ms.map_or("--".into(), |v| format!("{v:.0}ms")),
-                        m.packet_loss_pct.map_or("--".into(), |v| format!("{v:.1}%")),
+                        m.packet_loss_pct
+                            .map_or("--".into(), |v| format!("{v:.1}%")),
                         m.sla.as_deref().unwrap_or("--"),
                     );
                 }
@@ -199,7 +213,12 @@ async fn run_connect(profile: Option<String>, insecure: bool, json: bool, view: 
                 println!("{}", serde_json::to_string_pretty(&v)?);
             } else {
                 for t in v {
-                    println!("{:<20} {:<8} {:<6}", t.name, t.phase1_state.as_deref().unwrap_or("--"), t.ike_version.as_deref().unwrap_or("--"));
+                    println!(
+                        "{:<20} {:<8} {:<6}",
+                        t.name,
+                        t.phase1_state.as_deref().unwrap_or("--"),
+                        t.ike_version.as_deref().unwrap_or("--")
+                    );
                 }
             }
         }

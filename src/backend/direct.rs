@@ -3,11 +3,11 @@
 //! Connects to a single FortiGate over HTTPS and normalizes API responses into
 //! the application models. Read-only.
 
-use crate::backend::capabilities::{Capabilities, caps};
+use crate::backend::capabilities::{caps, Capabilities};
 use crate::backend::traits::{AddressFamily, FortiGateBackend};
 use crate::config::credentials;
 use crate::config::profiles::Profile;
-use crate::fortigate::{FortiGateClient, endpoints, normalize};
+use crate::fortigate::{endpoints, normalize, FortiGateClient};
 use crate::models::{BgpState, InterfaceStatus, IpsecTunnel, Route, SdwanState, SystemStatus};
 use anyhow::Result;
 
@@ -34,7 +34,8 @@ impl DirectBackend {
 impl FortiGateBackend for DirectBackend {
     async fn system_status(&self) -> Result<SystemStatus> {
         let mut s = normalize::system_status(&self.client.get(endpoints::system::STATUS).await?)?;
-        let usage = normalize::resource_usage(&self.client.get(endpoints::system::RESOURCE_USAGE).await?)?;
+        let usage =
+            normalize::resource_usage(&self.client.get(endpoints::system::RESOURCE_USAGE).await?)?;
         s.cpu_percent = usage.cpu_percent;
         s.memory_percent = usage.memory_percent;
         s.disk_percent = usage.disk_percent;
@@ -80,7 +81,16 @@ impl FortiGateBackend for DirectBackend {
 
     async fn capabilities(&self) -> Result<Capabilities> {
         let mut caps = Capabilities::default();
-        for c in [caps::SYSTEM, caps::INTERFACES, caps::SDWAN, caps::IPSEC, caps::ROUTING, caps::FIREWALL, caps::SESSIONS, caps::DIAGNOSTICS] {
+        for c in [
+            caps::SYSTEM,
+            caps::INTERFACES,
+            caps::SDWAN,
+            caps::IPSEC,
+            caps::ROUTING,
+            caps::FIREWALL,
+            caps::SESSIONS,
+            caps::DIAGNOSTICS,
+        ] {
             caps.available.insert(c.to_string());
         }
         Ok(caps)

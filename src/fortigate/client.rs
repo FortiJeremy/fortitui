@@ -29,7 +29,11 @@ impl FortiGateClient {
             .build()?;
 
         let base = format!("https://{host}:{port}/api/v2/monitor");
-        Ok(Self { base, token, client })
+        Ok(Self {
+            base,
+            token,
+            client,
+        })
     }
 
     /// Perform a GET to a monitor endpoint and return the full response body.
