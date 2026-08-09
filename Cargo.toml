@@ -1,0 +1,57 @@
+[package]
+name = "fortitui"
+version = "0.1.0"
+edition = "2021"
+description = "A fast, keyboard-driven terminal console for FortiGate operations"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/FortiJeremy/fortitui"
+keywords = ["fortigate", "fortinet", "tui", "network", "cli"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "fortitui"
+path = "src/main.rs"
+
+[dependencies]
+# TUI / terminal (used by the interactive TUI; wired in later milestones)
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+
+# HTTP / TLS (rustls to avoid system OpenSSL requirement)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli"] }
+
+# Serialization / config (YAML per Q9)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Credential storage (OS keychain). Opt-in: requires system keyring libs.
+keyring = { version = "3", default-features = false, optional = true }
+
+[features]
+default = []
+keyring = ["dep:keyring"]
+
+[dev-dependencies]
+# Snapshot-style tests against captured API fixtures
+insta = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

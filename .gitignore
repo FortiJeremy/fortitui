@@ -1,0 +1,83 @@
+# FortiTUI — build artifacts
+/target
+
+# Rust toolchain / editor noise
+Cargo.lock.backup
+*.rs.bk
+*.swp
+*~
+*.[0-9]
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.zed/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# SECRETS & CREDENTIALS — do NOT commit (repo is public)
+# ============================================================
+# Environment / injection
+.env
+.env.*
+!.env.example
+
+# Credential stores / keyrings / profiles that may hold secrets
+credentials.yaml
+credentials.yml
+profiles.yaml
+profiles.yml
+secrets.*
+*.secret.*
+*.credential
+keyring/
+
+# API tokens & passwords
+*.token
+*.apikey
+*.api_key
+*_token.txt
+
+# Private keys (RSA/ECDSA/Ed25519/OpenSSH/PEM/PGP)
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.key
+*.key.pem
+*.pem
+*.p12
+*.pfx
+*.ppk
+*.asc
+*.gpg
+!test/**/*.pem
+!tests/**/*.pem
+
+# Certificate private material (keep public certs only if intentional)
+*.crt
+*.cer
+*.der
+!test/**/*.crt
+
+# Local config that may embed a token (FortiTUI per-user config lives in
+# ~/.config/fortitui/ — never in the repo — but guard defensively too)
+config.local.*
+*.local.yaml
+*.local.yml
+*.local.toml
+
+# Shell history / session dumps that could contain typed secrets
+*_history
+*history.txt
+.bash_history
+.zsh_history
+
+# Logs that could contain tokens/headers
+*.log
+logs/
+!tests/**/*.log
