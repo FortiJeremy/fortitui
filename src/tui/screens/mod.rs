@@ -4,6 +4,7 @@
 //! it remains readable without color.
 
 pub mod dashboard;
+pub mod events;
 pub mod help;
 pub mod interfaces;
 pub mod policies;
@@ -30,6 +31,7 @@ pub enum Screen {
     Policies,
     Ipsec,
     Routing,
+    Events,
     Help,
 }
 
@@ -44,6 +46,7 @@ impl Screen {
             Screen::Policies => "Firewall Policies",
             Screen::Ipsec => "IPsec",
             Screen::Routing => "Routing",
+            Screen::Events => "Events",
             Screen::Help => "Help",
         }
     }
@@ -60,6 +63,7 @@ pub fn draw(screen: Screen, state: &AppState, profile: &str, frame: &mut Frame) 
         Screen::Policies => policies::draw(state, frame),
         Screen::Ipsec => vpn::draw(state, frame),
         Screen::Routing => routing::draw(state, frame),
+        Screen::Events => events::draw(state, frame),
         Screen::Help => help::draw(frame),
     }
 }

@@ -4,6 +4,7 @@
 //! it never touches raw FortiGate API responses. Phase 1 is keyboard-first.
 
 pub mod app;
+pub mod detect;
 pub mod event;
 pub mod screens;
 pub mod state;

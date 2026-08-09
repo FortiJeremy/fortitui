@@ -4,6 +4,7 @@
 //! `async fn`, which is not object-safe. Phase 1's only concrete type is
 //! `DirectBackend`.
 
+use super::detect;
 use super::event::{Event, EventLoop};
 use super::screens::{self, Screen};
 use super::state::SharedState;
@@ -14,6 +15,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// UI tick cadence in ms; drives background refresh + redraw (spec §37).
 const TICK_MS: u64 = 2000;
+
+/// Upper bound on the in-memory event log (spec §36).
+const MAX_EVENTS: usize = 200;
 
 /// Entry point for the interactive TUI (used by `cli` on no-subcommand).
 pub async fn run<B>(backend: B, profile: String) -> Result<()>
@@ -86,8 +90,9 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             KeyCode::Char('F') => self.navigate(Screen::Policies),
             KeyCode::Char('v') => self.navigate(Screen::Ipsec),
             KeyCode::Char('g') => self.navigate(Screen::Routing),
-            KeyCode::Char('d') | KeyCode::Char('e') => {
-                // Diagnostics / events screens land later.
+            KeyCode::Char('e') => self.navigate(Screen::Events),
+            KeyCode::Char('d') => {
+                // Diagnostics screen lands later.
             }
             _ => {}
         }
@@ -133,6 +138,12 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
                 self.spawn_routes6();
                 self.spawn_bgp();
             }
+            // Keep detection feeds alive while viewing events.
+            Screen::Events => {
+                self.spawn_system();
+                self.spawn_interfaces();
+                self.spawn_sdwan();
+            }
             Screen::Help => {}
         }
 
@@ -153,7 +164,14 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             let r = b.system_status().await;
             let mut st = s.lock().unwrap();
             match r {
-                Ok(v) => st.system = Some(v),
+                Ok(v) => {
+                    if let Some(prev) = st.system.as_ref() {
+                        for e in detect::detect_system(prev, &v) {
+                            st.push_event(e, MAX_EVENTS);
+                        }
+                    }
+                    st.system = Some(v);
+                }
                 Err(e) => st.system_err = Some(e.to_string()),
             }
         });
@@ -166,7 +184,15 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             let r = b.interfaces().await;
             let mut st = s.lock().unwrap();
             match r {
-                Ok(v) => st.interfaces = Some(v),
+                Ok(v) => {
+                    let prev: &[crate::models::InterfaceStatus] =
+                        st.interfaces.as_deref().unwrap_or(&[]);
+                    let evs = detect::detect_interfaces(prev, &v);
+                    for e in evs {
+                        st.push_event(e, MAX_EVENTS);
+                    }
+                    st.interfaces = Some(v);
+                }
                 Err(e) => st.interfaces_err = Some(e.to_string()),
             }
         });
@@ -179,7 +205,19 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             let r = b.sdwan().await;
             let mut st = s.lock().unwrap();
             match r {
-                Ok(v) => st.sdwan = Some(v),
+                Ok(v) => {
+                    let evs = if let Some(prev) = st.sdwan.as_ref() {
+                        let mut e = detect::detect_sdwan(prev, &v);
+                        e.extend(detect::detect_sdwan_active(prev, &v));
+                        e
+                    } else {
+                        Vec::new()
+                    };
+                    for e in evs {
+                        st.push_event(e, MAX_EVENTS);
+                    }
+                    st.sdwan = Some(v);
+                }
                 Err(e) => st.sdwan_err = Some(e.to_string()),
             }
         });
