@@ -3,7 +3,8 @@
 //! Subcommands:
 //! - profile add / list / remove / test
 //! - status / interfaces / sdwan / vpn / routes  (non-TUI, JSON-capable)
-//! Global flags: --profile, --profile-select, --debug, --version, --config
+//!
+//! Global flags: `--profile`, `--profile-select`, `--debug`, `--version`, `--config`.
 
 use crate::backend::traits::{AddressFamily, FortiGateBackend};
 use crate::backend::DirectBackend;

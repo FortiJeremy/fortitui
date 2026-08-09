@@ -220,8 +220,7 @@ pub fn ipsec_tunnels(v: &Value) -> Result<Vec<IpsecTunnel>> {
 }
 
 pub fn bgp_neighbors(v: &Value) -> Result<BgpState> {
-    let mut state = BgpState::default();
-    state.router_id = v
+    let router_id = v
         .get("results")
         .and_then(|r| r.get("router_id"))
         .and_then(|s| s.as_str())
@@ -232,9 +231,10 @@ pub fn bgp_neighbors(v: &Value) -> Result<BgpState> {
         .and_then(|n| n.as_array())
         .cloned()
         .unwrap_or_default();
+    let mut neighbors = Vec::new();
     for n in arr {
         let remote_as = n.get("remote_as").and_then(|v| v.as_u64());
-        state.neighbors.push(crate::models::BgpNeighbor {
+        neighbors.push(crate::models::BgpNeighbor {
             address: n
                 .get("remote_host")
                 .and_then(|s| s.as_str())
@@ -251,7 +251,11 @@ pub fn bgp_neighbors(v: &Value) -> Result<BgpState> {
             ..Default::default()
         });
     }
-    Ok(state)
+    Ok(BgpState {
+        router_id,
+        local_as: None,
+        neighbors,
+    })
 }
 
 pub fn routes(v: &Value, family: &str) -> Result<Vec<Route>> {
