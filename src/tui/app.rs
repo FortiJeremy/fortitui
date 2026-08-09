@@ -84,8 +84,10 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             KeyCode::Char('s') => self.navigate(Screen::Sdwan),
             KeyCode::Char('f') => self.navigate(Screen::Sessions),
             KeyCode::Char('F') => self.navigate(Screen::Policies),
-            KeyCode::Char('v') | KeyCode::Char('g') | KeyCode::Char('d') | KeyCode::Char('e') => {
-                // VPN / routing / diagnostics / events screens land later.
+            KeyCode::Char('v') => self.navigate(Screen::Ipsec),
+            KeyCode::Char('g') => self.navigate(Screen::Routing),
+            KeyCode::Char('d') | KeyCode::Char('e') => {
+                // Diagnostics / events screens land later.
             }
             _ => {}
         }
@@ -125,6 +127,12 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             Screen::Sdwan => self.spawn_sdwan(),
             Screen::Sessions => self.spawn_sessions(),
             Screen::Policies => self.spawn_policies(),
+            Screen::Ipsec => self.spawn_vpn(),
+            Screen::Routing => {
+                self.spawn_routes();
+                self.spawn_routes6();
+                self.spawn_bgp();
+            }
             Screen::Help => {}
         }
 
@@ -212,6 +220,19 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             match r {
                 Ok(v) => st.bgp = Some(v),
                 Err(e) => st.bgp_err = Some(e.to_string()),
+            }
+        });
+    }
+
+    fn spawn_routes6(&self) {
+        let b = self.backend.clone();
+        let s = self.state.clone();
+        tokio::spawn(async move {
+            let r = b.routes(AddressFamily::Ipv6).await;
+            let mut st = s.lock().unwrap();
+            match r {
+                Ok(v) => st.routes6 = Some(v),
+                Err(e) => st.routes6_err = Some(e.to_string()),
             }
         });
     }

@@ -7,9 +7,11 @@ pub mod dashboard;
 pub mod help;
 pub mod interfaces;
 pub mod policies;
+pub mod routing;
 pub mod sdwan;
 pub mod sessions;
 pub mod system;
+pub mod vpn;
 
 use crate::models::LinkState;
 use crate::tui::state::AppState;
@@ -26,6 +28,8 @@ pub enum Screen {
     Sdwan,
     Sessions,
     Policies,
+    Ipsec,
+    Routing,
     Help,
 }
 
@@ -38,6 +42,8 @@ impl Screen {
             Screen::Sdwan => "SD-WAN",
             Screen::Sessions => "Sessions",
             Screen::Policies => "Firewall Policies",
+            Screen::Ipsec => "IPsec",
+            Screen::Routing => "Routing",
             Screen::Help => "Help",
         }
     }
@@ -52,6 +58,8 @@ pub fn draw(screen: Screen, state: &AppState, profile: &str, frame: &mut Frame) 
         Screen::Sdwan => sdwan::draw(state, frame),
         Screen::Sessions => sessions::draw(state, frame),
         Screen::Policies => policies::draw(state, frame),
+        Screen::Ipsec => vpn::draw(state, frame),
+        Screen::Routing => routing::draw(state, frame),
         Screen::Help => help::draw(frame),
     }
 }

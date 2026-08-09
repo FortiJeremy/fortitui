@@ -26,6 +26,8 @@ pub struct AppState {
     pub vpn_err: Option<String>,
     pub routes: Option<Vec<Route>>,
     pub routes_err: Option<String>,
+    pub routes6: Option<Vec<Route>>,
+    pub routes6_err: Option<String>,
     pub bgp: Option<BgpState>,
     pub bgp_err: Option<String>,
     pub sessions: Option<Vec<FirewallSession>>,
