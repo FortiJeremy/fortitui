@@ -1,0 +1,1 @@
+{"http_method":"GET","results":{"success":true,"entries":[{"ip_version":4,"type":"static","origin":"sd-wan","ip_mask":"0.0.0.0\/0","distance":5,"metric":0,"priority":1,"vrf":0,"gateway":"72.83.34.1","non_rc_gateway":"72.83.34.1","interface":"port4"}]},"vdom":"root","path":"router","name":"lookup","status":"success","serial":"FG121GTK25002135","version":"v8.0.1","build":201}

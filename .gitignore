@@ -2,11 +2,12 @@
 /target
 
 # Rust toolchain / editor noise
+# NOT *.[0-9] — that also matches directory names like `fortios-8.0`
 Cargo.lock.backup
 *.rs.bk
 *.swp
 *~
-*.[0-9]
+*.[0-9][0-9]
 
 # IDE
 .idea/
