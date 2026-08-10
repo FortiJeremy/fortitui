@@ -6,7 +6,7 @@ get started) live in the [README](./README.md).
 
 ## Status
 
-Phase 1 — **Direct FortiGate mode** (in development). FortiOS 8.0.x target.
+Phase 1 — **Direct FortiGate mode** (**complete** as of 2026-08-09). FortiOS 8.0.x target.
 Single binary, no server, no database, no Docker; read-only by default.
 
 ### Implemented (committed to `main`)
@@ -36,12 +36,12 @@ Single binary, no server, no database, no Docker; read-only by default.
 
 ### Next milestones
 
-- SD-WAN rolling latency/loss/jitter trend.
-- IPsec detail / cryptography (incl. PQC) view.
-- Diagnostics (ping / traceroute / DNS) — mostly not implementable over the REST
-  monitor API, so these go to a TODO list per the spec (gap-analysis Q2).
-- Search, command palette, contextual help polish.
-- JSON CLI output for all data views.
+- **Phase 1 complete (2026-08-09, commit `1f7c9b4`).** Shipped in the final batch:
+  SD-WAN rolling trend (C7), IPsec cryptography detail incl. PQC (C9), Diagnostics
+  screen (C13), global `/` search (D1), `:` command palette (D2), contextual help (D3),
+  `--json` for all views (D4), error UX (D5), client error-branch tests (A5).
+- Known limitation: ping/traceroute/DNS/sniffer are CLI-only on FortiOS 8 (gap-analysis
+  Q2) and are surfaced as NOT AVAILABLE in the Diagnostics screen.
 - Phase 2: FortiTUI Server/Proxy fleet mode. Phase 3: FortiManager backend.
 
 ## Architecture

@@ -17,12 +17,16 @@ binary — **no server, no database, no Docker**.
 - **Dashboard** — overall health with a situational-awareness strip
 - **System** — model, serial, version, uptime, CPU/memory/disk, sessions
 - **Interfaces** — link state, addresses, counters, errors; select one for a live throughput graph
-- **SD-WAN** — members (state / latency / jitter / loss / SLA) and health checks, active member highlighted
-- **IPsec** — tunnel list with Phase 1/2 state, IKE version, traffic, uptime
+- **SD-WAN** — members (state / latency / jitter / loss / SLA) and health checks, active member highlighted; `l` toggles a rolling performance trend
+- **IPsec** — tunnel list with Phase 1/2 state, IKE version, traffic, uptime; `Enter` opens a cryptography detail view (incl. PQC)
 - **Routing / BGP** — IPv4 + IPv6 routes, BGP neighbors, and interactive **route lookup**
+- **Diagnostics** — documents which diagnostics work over the API vs. which require the CLI
 - **Sessions** — active firewall sessions (source/dest, protocol, policy, traffic)
 - **Firewall Policies** — policy counters (hits / bytes / sessions)
 - **Events** — in-memory state-transition log (interface up/down, SD-WAN changes, CPU/memory thresholds)
+
+Global overlays: **`/` search/filter** across objects and a **`:` command palette**.
+`?` shows contextual help for the current screen.
 
 **Non-TUI CLI** (for scripts and automation; append `--json` for machine-readable
 output):
