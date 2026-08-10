@@ -1,0 +1,95 @@
+name: Release
+
+# On a `v*` tag push, build the three platform binaries and attach them to a
+# GitHub Release, each named <name>-<version>-<os>-<arch> so the artifact
+# names carry their target architecture.
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build-${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64.
+          - os: ubuntu-latest
+            label: linux-amd64
+            triple: x86_64-unknown-linux-gnu
+            binext: ""
+          # Windows x64.
+          - os: windows-latest
+            label: windows-amd64
+            triple: x86_64-pc-windows-msvc
+            binext: ".exe"
+          # macOS arm64 (Apple Silicon) — `macos-15` is arm64 by default.
+          - os: macos-15
+            label: macos-arm64
+            triple: aarch64-apple-darwin
+            binext: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.triple }}
+
+      - name: Build (release)
+        run: cargo build --release --target ${{ matrix.triple }}
+
+      - name: Stage arch-named binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.triple }}/release/fortitui${{ matrix.binext }}" \
+             "dist/fortitui-${{ github.ref_name }}-${{ matrix.label }}${{ matrix.binext }}"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Collect built binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Contents
+        run: ls -la dist
+
+      - name: Write checksums
+        run: |
+          cd dist
+          sha256sum fortitui-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
