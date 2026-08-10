@@ -75,49 +75,119 @@ impl FortiGateClient {
             .await
             .map_err(|e| anyhow!("HTTP error for {url}: {e}"))?;
 
-        let status = resp.status();
+        let status = resp.status().as_u16();
         let text = resp
             .text()
             .await
             .map_err(|e| anyhow!("read error for {url}: {e}"))?;
 
-        if status.is_success() {
-            if text.trim().is_empty() {
-                // FortiGate may return 200 with an empty body (e.g. nothing to
-                // report for some endpoints). Return a null value so callers
-                // treat it as "no results" rather than failing.
-                return Ok(serde_json::Value::Null);
-            }
-            let body: serde_json::Value =
-                serde_json::from_str(&text).map_err(|e| anyhow!("invalid JSON from {url}: {e}"))?;
-            return Ok(body);
-        }
+        // Pure parsing path is factored out so error/empty branches are unit
+        // testable without a live FortiGate (A5).
+        parse_response(status, &text, url)
+    }
+}
 
-        // Error path: try to surface the FortiGate error message even when the
-        // body isn't clean JSON (e.g. empty body, HTML, or plain text).
-        let parsed = serde_json::from_str::<serde_json::Value>(&text).ok();
-        let msg = parsed
-            .as_ref()
-            .and_then(|b| b.get("status").and_then(|s| s.as_str()))
-            .unwrap_or("request failed");
-        let code = parsed
-            .as_ref()
-            .and_then(|b| b.get("http_status").map(|v| v.to_string()))
-            .unwrap_or_else(|| {
-                if text.trim().is_empty() {
-                    String::new()
-                } else {
-                    text.chars().take(120).collect()
-                }
-            });
-        Err(anyhow!(
-            "FortiGate returned HTTP {} ({msg}) for {url}{}",
-            status.as_u16(),
-            if code.is_empty() {
+/// Parse a FortiGate monitor response body given the HTTP status.
+///
+/// For 2xx responses:
+/// - an empty 200 body yields `Value::Null` (FortiGate returns empty for some
+///   endpoints; callers treat it as "no results" rather than failing)
+/// - a non-empty 200 body is parsed as JSON (the HTTP envelope is preserved).
+///
+/// For non-2xx responses the FortiGate error message (`status`) and a snippet
+/// of the body (`http_status` or raw text) are surfaced for actionable
+/// diagnostics.
+fn parse_response(status: u16, text: &str, url: &str) -> Result<serde_json::Value> {
+    if (200..300).contains(&status) {
+        if text.trim().is_empty() {
+            return Ok(serde_json::Value::Null);
+        }
+        return serde_json::from_str(text).map_err(|e| anyhow!("invalid JSON from {url}: {e}"));
+    }
+
+    let parsed: Option<serde_json::Value> = serde_json::from_str(text).ok();
+    // Prefer the actionable `error`/`message` field (monitor API) over the
+    // generic `status` tag ("error" / "success").
+    let msg = parsed
+        .as_ref()
+        .and_then(|b| {
+            b.get("error")
+                .and_then(|s| s.as_str())
+                .or_else(|| b.get("message").and_then(|s| s.as_str()))
+                .or_else(|| b.get("status").and_then(|s| s.as_str()))
+        })
+        .unwrap_or("request failed");
+    let code = parsed
+        .as_ref()
+        .and_then(|b| b.get("http_status").map(|v| v.to_string()))
+        .unwrap_or_else(|| {
+            if text.trim().is_empty() {
                 String::new()
             } else {
-                format!(" [{code}]")
+                text.chars().take(120).collect()
             }
-        ))
+        });
+    Err(anyhow!(
+        "FortiGate returned HTTP {status} ({msg}) for {url}{}",
+        if code.is_empty() {
+            String::new()
+        } else {
+            format!(" [{code}]")
+        }
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_200_body_is_null() {
+        let v = parse_response(200, "  ", "https://fg/api/v2/monitor/x").unwrap();
+        assert_eq!(v, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn valid_200_json_is_parsed() {
+        let v = parse_response(200, r#"{"results":[1,2],"status":"success"}"#, "/x").unwrap();
+        assert_eq!(v["results"][1], 2);
+    }
+
+    #[test]
+    fn invalid_200_json_is_an_error() {
+        let r = parse_response(200, "not json {{{", "/x");
+        assert!(r.is_err());
+        assert!(r.unwrap_err().to_string().contains("invalid JSON"));
+    }
+
+    #[test]
+    fn non_json_error_body_surfaces_status_and_snippet() {
+        let err = parse_response(500, "<html>oops</html>", "/bgp").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("HTTP 500"), "msg: {msg}");
+        assert!(msg.contains("<html>oops</html>"), "msg: {msg}");
+    }
+
+    #[test]
+    fn json_error_surfaces_status_and_http_status() {
+        let err = parse_response(
+            424,
+            r#"{"status":"error","http_status":424,"error":"need count"}"#,
+            "/sessions",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("HTTP 424"), "msg: {msg}");
+        assert!(msg.contains("need count"), "msg: {msg}");
+        assert!(msg.contains("[424]"), "msg: {msg}");
+    }
+
+    #[test]
+    fn empty_error_body_has_no_snippet() {
+        let err = parse_response(502, "", "/x").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "FortiGate returned HTTP 502 (request failed) for /x"
+        );
     }
 }

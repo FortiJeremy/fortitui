@@ -5,7 +5,7 @@
 //! active/content member is highlighted.
 
 use crate::models::SdwanMember;
-use crate::tui::screens::header;
+use crate::tui::screens::{header, matches_search};
 use crate::tui::state::AppState;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -78,26 +78,51 @@ fn member_row(m: &SdwanMember, active: bool) -> Row<'static> {
 
 pub fn draw(state: &AppState, frame: &mut Frame) {
     let area = frame.area();
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // status line
-            Constraint::Length(6), // members table
-            Constraint::Min(3),    // health checks table
-            Constraint::Length(1), // hint
-        ])
-        .split(area);
+    let trend = state.sdwan_trend;
+    let chunks = if trend {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // status line
+                Constraint::Length(6), // members table
+                Constraint::Min(3),    // health checks table
+                Constraint::Length(8), // rolling trend (C7)
+                Constraint::Length(1), // hint
+            ])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // status line
+                Constraint::Length(6), // members table
+                Constraint::Min(3),    // health checks table
+                Constraint::Length(1), // hint
+            ])
+            .split(area)
+    };
 
     draw_status(state, frame, chunks[0]);
     draw_members(state, frame, chunks[1]);
     draw_health(state, frame, chunks[2]);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            " [Esc] back   [?] help   [r] refresh   (* = selected/active member)",
-            Style::default().fg(Color::DarkGray),
-        ))),
-        chunks[3],
-    );
+    if trend {
+        draw_trend(state, frame, chunks[3]);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                " [Esc] close trend   [?] help   [r] refresh   [l] toggle trend",
+                Style::default().fg(Color::DarkGray),
+            ))),
+            chunks[4],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                " [Esc] back   [?] help   [r] refresh   [l] rolling trend (C7)   (* = active)",
+                Style::default().fg(Color::DarkGray),
+            ))),
+            chunks[3],
+        );
+    }
 }
 
 fn draw_status(state: &AppState, frame: &mut Frame, area: Rect) {
@@ -146,6 +171,22 @@ fn draw_members(state: &AppState, frame: &mut Frame, area: Rect) {
         Some(sd) => sd.members.clone(),
         None => Vec::new(),
     };
+    let needle = state.search.clone();
+    let members: Vec<SdwanMember> = members
+        .into_iter()
+        .filter(|m| {
+            matches_search(
+                &needle,
+                &[
+                    &m.name,
+                    &m.interface,
+                    m.zone.as_deref().unwrap_or(""),
+                    m.gateway.as_deref().unwrap_or(""),
+                    &m.state,
+                ],
+            )
+        })
+        .collect();
     let active = state
         .sdwan
         .as_ref()
@@ -197,6 +238,16 @@ fn draw_health(state: &AppState, frame: &mut Frame, area: Rect) {
         Some(sd) => sd.health_checks.clone(),
         None => Vec::new(),
     };
+    let needle = state.search.clone();
+    let checks: Vec<_> = checks
+        .into_iter()
+        .filter(|c| {
+            matches_search(
+                &needle,
+                &[&c.name, &c.member, c.status.as_deref().unwrap_or("")],
+            )
+        })
+        .collect();
     let header_row = Row::new(vec![
         "CHECK", "MEMBER", "LATENCY", "JITTER", "LOSS", "STATUS",
     ])
@@ -238,4 +289,88 @@ fn draw_health(state: &AppState, frame: &mut Frame, area: Rect) {
     .header(header_row)
     .block(b);
     frame.render_widget(table, area);
+}
+
+/// Rolling in-memory performance trend for the active SD-WAN member (spec §23,
+/// C7). Shows latency/jitter/loss as ASCII sparklines plus min/avg/max.
+fn draw_trend(state: &AppState, frame: &mut Frame, area: Rect) {
+    let b = Block::default().borders(Borders::ALL).title(Span::styled(
+        "ROLLING PERFORMANCE TREND (~60 min)",
+        header(),
+    ));
+    let inner = b.inner(area);
+    frame.render_widget(b, area);
+
+    let name = state
+        .sdwan
+        .as_ref()
+        .and_then(|sd| sd.active_member.clone())
+        .or_else(|| state.sdwan_history.keys().next().cloned())
+        .unwrap_or_default();
+    let hist = state.sdwan_history.get(&name);
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled("Member: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(name.clone(), Style::default().fg(Color::Cyan)),
+    ]));
+
+    if let Some(h) = hist {
+        let widths = inner.width.saturating_sub(24) as usize;
+        let lat: Vec<f32> = h.samples.iter().map(|s| s.1).collect();
+        let jit: Vec<f32> = h.samples.iter().map(|s| s.2).collect();
+        let loss: Vec<f32> = h.samples.iter().map(|s| s.3).collect();
+        for (label, vals) in [("latency", &lat), ("jitter", &jit), ("loss", &loss)] {
+            let (mn, avg, mx) = sample_stats(vals);
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {label:<8} "), Style::default().fg(Color::Yellow)),
+                Span::styled(sparkline(vals, widths), Style::default().fg(Color::Green)),
+                Span::styled(
+                    format!("  min {mn}  avg {avg}  max {mx}"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  No history yet — samples accumulate on each refresh tick.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// `(min, avg, max)` formatted for a float series.
+fn sample_stats(v: &[f32]) -> (String, String, String) {
+    if v.is_empty() {
+        return ("--".into(), "--".into(), "--".into());
+    }
+    let mn = v.iter().copied().fold(f32::INFINITY, f32::min);
+    let mx = v.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let avg = v.iter().sum::<f32>() / v.len() as f32;
+    let f = |x: f32| format!("{x:.1}");
+    (f(mn), f(avg), f(mx))
+}
+
+/// ASCII block sparkline from a float series, bucketed into `width` bars.
+fn sparkline(values: &[f32], width: usize) -> String {
+    const BARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if values.is_empty() || width == 0 {
+        return String::new();
+    }
+    let max = values.iter().copied().fold(0.0f32, f32::max);
+    let n = values.len();
+    let step = 1usize.max(n.div_ceil(width));
+    let mut s = String::new();
+    for i in (0..n).step_by(step).take(width) {
+        let v = values[i];
+        let idx = if max <= 0.0 {
+            0
+        } else {
+            ((v / max) * (BARS.len() - 1) as f32).round() as usize
+        };
+        s.push(BARS[idx.min(BARS.len() - 1)]);
+    }
+    s
 }

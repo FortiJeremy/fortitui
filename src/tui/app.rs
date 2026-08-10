@@ -35,6 +35,8 @@ pub struct App<B: FortiGateBackend> {
     screen: Screen,
     profile: String,
     quit: bool,
+    /// Screen that contextual help is currently describing (spec §63).
+    help_subject: Screen,
 }
 
 impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
@@ -45,6 +47,7 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             screen: Screen::Dashboard,
             profile,
             quit: false,
+            help_subject: Screen::Dashboard,
         }
     }
 
@@ -66,7 +69,7 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             }
             terminal.draw(|f| {
                 let state = self.state.lock().unwrap();
-                screens::draw(self.screen, &state, &self.profile, f);
+                screens::draw(self.screen, &state, &self.profile, self.help_subject, f);
             })?;
         }
         ratatui::restore();
@@ -78,33 +81,30 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
         if key.kind != KeyEventKind::Press {
             return;
         }
-        // While a text input (route lookup) is active, swallow all keys.
-        if self.state.lock().unwrap().input_mode {
+        // Overlay/input modes swallow keys: palette > search > route lookup.
+        let (palette, search, input) = {
+            let st = self.state.lock().unwrap();
+            (st.palette, st.search_mode, st.input_mode)
+        };
+        if palette {
+            self.handle_palette(key);
+            return;
+        }
+        if search {
+            self.handle_search(key);
+            return;
+        }
+        if input {
             self.handle_input(key);
             return;
         }
         match key.code {
             KeyCode::Char('q') => self.quit = true,
-            KeyCode::Char('?') => self.toggle(Screen::Help),
-            KeyCode::Char('l') => self.start_lookup(),
-            KeyCode::Esc => {
-                // First close the interface detail (if open), then leave the screen.
-                if self.screen == Screen::Interfaces {
-                    let exited = {
-                        let mut st = self.state.lock().unwrap();
-                        if st.iface_detail {
-                            st.iface_detail = false;
-                            true
-                        } else {
-                            false
-                        }
-                    };
-                    if exited {
-                        return;
-                    }
-                }
-                self.navigate(Screen::Dashboard);
-            }
+            KeyCode::Char('?') => self.toggle_help(),
+            KeyCode::Char(':') => self.open_palette(),
+            KeyCode::Char('/') => self.open_search(),
+            KeyCode::Char('l') => self.handle_l(),
+            KeyCode::Esc => self.handle_esc(),
             KeyCode::Char('r') => self.refresh(),
             KeyCode::Char('i') => self.navigate(Screen::Interfaces),
             KeyCode::Char('o') => self.navigate(Screen::System),
@@ -114,10 +114,179 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             KeyCode::Char('v') => self.navigate(Screen::Ipsec),
             KeyCode::Char('g') => self.navigate(Screen::Routing),
             KeyCode::Char('e') => self.navigate(Screen::Events),
-            KeyCode::Char('d') => {
-                // Diagnostics screen lands later.
+            KeyCode::Char('d') => self.navigate(Screen::Diagnostics),
+            KeyCode::Up | KeyCode::Down | KeyCode::Enter => self.list_nav(key),
+            _ => {}
+        }
+    }
+
+    /// Toggle contextual help for the current screen (spec §63).
+    fn toggle_help(&mut self) {
+        if self.screen == Screen::Help {
+            self.screen = self.help_subject;
+        } else {
+            self.help_subject = self.screen;
+            self.screen = Screen::Help;
+        }
+    }
+
+    /// Open the command palette (spec §17, D2).
+    fn open_palette(&mut self) {
+        let mut st = self.state.lock().unwrap();
+        st.palette = true;
+        st.palette_sel = 0;
+        st.search.clear();
+    }
+
+    /// Open the search/filter bar (spec §64, D1).
+    fn open_search(&mut self) {
+        let mut st = self.state.lock().unwrap();
+        st.search_mode = true;
+        st.search.clear();
+    }
+
+    /// `l`-key behaviour: route lookup on Routing, rolling trend on SD-WAN (C7).
+    fn handle_l(&mut self) {
+        match self.screen {
+            Screen::Routing => self.start_lookup(),
+            Screen::Sdwan => {
+                let mut st = self.state.lock().unwrap();
+                st.sdwan_trend = !st.sdwan_trend;
             }
-            KeyCode::Up | KeyCode::Down | KeyCode::Enter => self.interfaces_nav(key),
+            _ => {}
+        }
+    }
+
+    /// Esc: close any open detail/overlay, then leave help, then go home.
+    fn handle_esc(&mut self) {
+        let closed = {
+            let mut st = self.state.lock().unwrap();
+            if st.iface_detail {
+                st.iface_detail = false;
+                true
+            } else if st.vpn_detail {
+                st.vpn_detail = false;
+                true
+            } else if st.sdwan_trend {
+                st.sdwan_trend = false;
+                true
+            } else {
+                false
+            }
+        };
+        if closed {
+            return;
+        }
+        if self.screen == Screen::Help {
+            self.screen = self.help_subject;
+            return;
+        }
+        self.navigate(Screen::Dashboard);
+    }
+
+    /// Up/Down move a list selection; Enter toggles detail. Applies to the
+    /// Interfaces and IPsec lists.
+    fn list_nav(&mut self, key: KeyEvent) {
+        match self.screen {
+            Screen::Interfaces => self.interfaces_nav(key),
+            Screen::Ipsec => self.vpn_nav(key),
+            _ => {}
+        }
+    }
+
+    /// Up/Down/Enter for the IPsec list; Enter opens the crypto detail (C9).
+    fn vpn_nav(&mut self, key: KeyEvent) {
+        let mut st = self.state.lock().unwrap();
+        match key.code {
+            KeyCode::Up => {
+                if !st.vpn_detail {
+                    st.vpn_sel = st.vpn_sel.saturating_sub(1);
+                }
+            }
+            KeyCode::Down => {
+                if !st.vpn_detail {
+                    let len = st.vpn.as_ref().map(|v| v.len()).unwrap_or(0);
+                    if len > 0 && st.vpn_sel + 1 < len {
+                        st.vpn_sel += 1;
+                    }
+                }
+            }
+            KeyCode::Enter => {
+                let has = st.vpn.as_ref().is_some_and(|v| !v.is_empty());
+                if has {
+                    st.vpn_detail = !st.vpn_detail;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Command palette input: type to filter, ↑/↓ to select, Enter to run.
+    fn handle_palette(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.state.lock().unwrap().palette = false;
+            }
+            KeyCode::Enter => self.run_palette(),
+            KeyCode::Up => {
+                self.state.lock().unwrap().palette_sel = self.palette_sel().saturating_sub(1);
+            }
+            KeyCode::Down => {
+                let mut st = self.state.lock().unwrap();
+                let n = palette_commands(&st.search).len();
+                if n > 0 && st.palette_sel + 1 < n {
+                    st.palette_sel += 1;
+                }
+            }
+            KeyCode::Backspace => {
+                self.state.lock().unwrap().search.pop();
+            }
+            KeyCode::Char(c) if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '/') => {
+                self.state.lock().unwrap().search.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    fn palette_sel(&self) -> usize {
+        self.state.lock().unwrap().palette_sel
+    }
+
+    /// Execute the currently selected palette command.
+    fn run_palette(&mut self) {
+        let sel = self.state.lock().unwrap().palette_sel;
+        let cmds = {
+            let st = self.state.lock().unwrap();
+            palette_commands(&st.search)
+        };
+        self.state.lock().unwrap().palette = false;
+        self.state.lock().unwrap().search.clear();
+        let Some(action) = cmds.get(sel).map(|(_, a)| *a) else {
+            return;
+        };
+        match action {
+            PaletteAction::Navigate(s) => self.navigate(s),
+            PaletteAction::Refresh => self.refresh(),
+            PaletteAction::Quit => self.quit = true,
+        }
+    }
+
+    /// Search/filter input (D1). The filter is applied at render time per
+    /// screen; Enter/Esc closes the bar.
+    fn handle_search(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                let mut st = self.state.lock().unwrap();
+                st.search_mode = false;
+            }
+            KeyCode::Backspace => {
+                self.state.lock().unwrap().search.pop();
+            }
+            KeyCode::Char(c)
+                if c.is_alphanumeric() || matches!(c, '.' | ':' | '/' | '-' | '_' | ' ' | '*') =>
+            {
+                self.state.lock().unwrap().search.push(c);
+            }
             _ => {}
         }
     }
@@ -220,14 +389,6 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
         });
     }
 
-    fn toggle(&mut self, screen: Screen) {
-        self.screen = if self.screen == screen {
-            Screen::Dashboard
-        } else {
-            screen
-        };
-    }
-
     /// Switch screens, immediately refreshing the target's data so it never
     /// sits empty waiting for the next tick.
     fn navigate(&mut self, screen: Screen) {
@@ -267,6 +428,7 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
                 self.spawn_sdwan();
             }
             Screen::Help => {}
+            Screen::Diagnostics => {}
         }
 
         let s = self.state.clone();
@@ -339,6 +501,7 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
                     for e in evs {
                         st.push_event(e, MAX_EVENTS);
                     }
+                    st.update_sdwan_history(&v);
                     st.sdwan = Some(v);
                 }
                 Err(e) => st.sdwan_err = Some(e.to_string()),
@@ -423,4 +586,46 @@ impl<B: FortiGateBackend + Clone + Send + Sync + 'static> App<B> {
             }
         });
     }
+}
+
+/// Actions the command palette (D2, spec §17) can execute.
+#[derive(Debug, Clone, Copy)]
+enum PaletteAction {
+    Navigate(Screen),
+    Refresh,
+    Quit,
+}
+
+/// Ordered command list for the palette, filtered case-insensitively by `q`.
+fn palette_commands(q: &str) -> Vec<(&'static str, PaletteAction)> {
+    use Screen::*;
+    let all: &[(&str, PaletteAction)] = &[
+        ("Open Dashboard", PaletteAction::Navigate(Dashboard)),
+        ("Open System", PaletteAction::Navigate(System)),
+        ("Open Interfaces", PaletteAction::Navigate(Interfaces)),
+        ("Open SD-WAN", PaletteAction::Navigate(Sdwan)),
+        ("Open IPsec VPN", PaletteAction::Navigate(Ipsec)),
+        ("Open Routing / BGP", PaletteAction::Navigate(Routing)),
+        ("Open Sessions", PaletteAction::Navigate(Sessions)),
+        ("Open Firewall Policies", PaletteAction::Navigate(Policies)),
+        ("Open Events", PaletteAction::Navigate(Events)),
+        ("Open Diagnostics", PaletteAction::Navigate(Diagnostics)),
+        ("Open Help", PaletteAction::Navigate(Help)),
+        ("Refresh data", PaletteAction::Refresh),
+        ("Quit", PaletteAction::Quit),
+    ];
+    let q = q.trim().to_lowercase();
+    if q.is_empty() {
+        all.to_vec()
+    } else {
+        all.iter()
+            .filter(|(label, _)| label.to_lowercase().contains(&q))
+            .copied()
+            .collect()
+    }
+}
+
+/// Palette command labels (used by the renderer for the overlay).
+pub fn palette_commands_for_draw(q: &str) -> Vec<&'static str> {
+    palette_commands(q).into_iter().map(|(l, _)| l).collect()
 }

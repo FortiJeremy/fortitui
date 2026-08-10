@@ -1,6 +1,6 @@
 //! Firewall policy screen (spec §35) — operational counters.
 
-use crate::tui::screens::header;
+use crate::tui::screens::{header, matches_search};
 use crate::tui::state::AppState;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -71,11 +71,15 @@ pub fn draw(state: &AppState, frame: &mut Frame) {
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
     );
+    let needle = state.search.clone();
     let rows: Vec<Row> = state
         .policies
         .as_ref()
         .map(|v| {
             v.iter()
+                .filter(|p| {
+                    matches_search(&needle, &[&p.id.to_string(), &p.name, p.action.as_str()])
+                })
                 .map(|p| {
                     Row::new(vec![
                         cell(p.id.to_string(), Style::default().fg(Color::Cyan)),

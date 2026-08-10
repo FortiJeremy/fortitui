@@ -5,7 +5,7 @@
 //! on boxes with no IPsec — handled gracefully.
 
 use crate::models::IpsecTunnel;
-use crate::tui::screens::header;
+use crate::tui::screens::{header, matches_search};
 use crate::tui::state::AppState;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -85,14 +85,28 @@ fn row(t: &IpsecTunnel) -> Row<'static> {
 
 pub fn draw(state: &AppState, frame: &mut Frame) {
     let area = frame.area();
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // status
-            Constraint::Min(3),    // table
-            Constraint::Length(1), // hint
-        ])
-        .split(area);
+    // When a tunnel detail is open, add a detail pane (C9).
+    let detail_open = state.vpn_detail && state.vpn.as_ref().is_some_and(|v| !v.is_empty());
+    let chunks = if detail_open {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // status
+                Constraint::Min(3),    // table
+                Constraint::Length(13),
+                Constraint::Length(1), // hint
+            ])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // status
+                Constraint::Min(3),    // table
+                Constraint::Length(1), // hint
+            ])
+            .split(area)
+    };
 
     let status = if let Some(err) = &state.vpn_err {
         Line::from(Span::styled(
@@ -109,7 +123,15 @@ pub fn draw(state: &AppState, frame: &mut Frame) {
             })
             .count();
         Line::from(Span::styled(
-            format!("{} tunnels, {up} up", v.len()),
+            format!(
+                "{} tunnels, {up} up   [Enter] detail   [/] filter{}",
+                v.len(),
+                if state.search.is_empty() {
+                    String::new()
+                } else {
+                    format!("  (filter: {})", state.search)
+                }
+            ),
             Style::default().fg(Color::DarkGray),
         ))
     } else {
@@ -141,11 +163,39 @@ pub fn draw(state: &AppState, frame: &mut Frame) {
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
     );
-    let rows: Vec<Row> = state
+    let needle = state.search.clone();
+    let filtered: Vec<&IpsecTunnel> = state
         .vpn
         .as_ref()
-        .map(|v| v.iter().map(row).collect())
+        .map(|v| {
+            v.iter()
+                .filter(|t| {
+                    matches_search(
+                        &needle,
+                        &[
+                            t.name.as_str(),
+                            t.remote_gateway.as_deref().unwrap_or(""),
+                            t.ike_version.as_deref().unwrap_or(""),
+                        ],
+                    )
+                })
+                .collect()
+        })
         .unwrap_or_default();
+    let sel = state.vpn_sel.min(filtered.len().saturating_sub(1));
+    let rows: Vec<Row> = filtered
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let selected = detail_open && i == sel;
+            let base = row(t);
+            if selected {
+                base.style(Style::default().add_modifier(Modifier::REVERSED))
+            } else {
+                base
+            }
+        })
+        .collect();
     let table = Table::new(
         rows,
         [
@@ -163,11 +213,93 @@ pub fn draw(state: &AppState, frame: &mut Frame) {
     .block(b);
     frame.render_widget(table, chunks[1]);
 
+    if detail_open {
+        if let Some(t) = filtered.get(sel) {
+            draw_detail(t, frame, chunks[2]);
+        }
+    }
+
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            " [Esc] back   [?] help   [r] refresh",
+            " [Esc] back   [?] help   [r] refresh   [Enter] cryptography detail (C9)",
             Style::default().fg(Color::DarkGray),
         ))),
-        chunks[2],
+        *chunks.last().unwrap(),
     );
+}
+
+/// Phase 1/2 and cryptography detail for the selected tunnel (C9, spec §24-25).
+///
+/// Exposes cryptographic mechanisms individually — it never implies a tunnel is
+/// "PQC secure" based on one feature (spec §25).
+fn draw_detail(t: &IpsecTunnel, frame: &mut Frame, area: ratatui::layout::Rect) {
+    let b = Block::default().borders(Borders::ALL).title(Span::styled(
+        format!("IPSEC CRYPTOGRAPHY — {}", t.name),
+        header(),
+    ));
+    let inner = b.inner(area);
+    frame.render_widget(b, area);
+
+    let yesno = |b: bool| if b { "Enabled" } else { "Disabled" };
+    let rows: [(&str, String); 10] = [
+        (
+            "Phase 1",
+            t.phase1_state.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "Phase 2",
+            t.phase2_state.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "IKE Version",
+            t.ike_version.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "Key Exchange",
+            t.key_exchange.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "Authentication",
+            t.authentication.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "PQC Signature",
+            t.pqc_signature.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "PQC PPK",
+            t.pqc_ppk
+                .map(|b| yesno(b).into())
+                .unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "Encryption",
+            t.encryption.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "Remote Gateway",
+            t.remote_gateway.clone().unwrap_or_else(|| "--".into()),
+        ),
+        (
+            "Uptime",
+            t.uptime_secs
+                .map(|s| uptime(Some(s)))
+                .unwrap_or_else(|| "--".into()),
+        ),
+    ];
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (k, v) in rows {
+        let val_style = if v.contains("PQC") || v.eq_ignore_ascii_case("Enabled") {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {k:<20}"), Style::default().fg(Color::Yellow)),
+            Span::styled(v, val_style),
+        ]));
+    }
+
+    frame.render_widget(Paragraph::new(lines), inner);
 }

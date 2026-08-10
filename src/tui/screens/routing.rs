@@ -5,7 +5,7 @@
 //! 500 → backend degrades to empty) — handled gracefully.
 
 use crate::models::Route;
-use crate::tui::screens::header;
+use crate::tui::screens::{header, matches_search};
 use crate::tui::state::AppState;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -190,12 +190,41 @@ fn bgp_summary(state: &AppState) -> String {
 }
 
 fn draw_routes(state: &AppState, frame: &mut Frame, area: Rect) {
+    let needle = state.search.clone();
     let mut rows: Vec<Row> = Vec::new();
     if let Some(v) = &state.routes {
-        rows.extend(v.iter().map(route_row));
+        rows.extend(
+            v.iter()
+                .filter(|r| {
+                    matches_search(
+                        &needle,
+                        &[
+                            r.prefix.as_str(),
+                            r.protocol.as_str(),
+                            r.next_hop.as_deref().unwrap_or(""),
+                            r.interface.as_deref().unwrap_or(""),
+                        ],
+                    )
+                })
+                .map(route_row),
+        );
     }
     if let Some(v) = &state.routes6 {
-        rows.extend(v.iter().map(route_row));
+        rows.extend(
+            v.iter()
+                .filter(|r| {
+                    matches_search(
+                        &needle,
+                        &[
+                            r.prefix.as_str(),
+                            r.protocol.as_str(),
+                            r.next_hop.as_deref().unwrap_or(""),
+                            r.interface.as_deref().unwrap_or(""),
+                        ],
+                    )
+                })
+                .map(route_row),
+        );
     }
 
     let err = state.routes_err.as_ref().or(state.routes6_err.as_ref());

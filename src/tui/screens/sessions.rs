@@ -5,7 +5,7 @@
 //! with the search milestone (D1).
 
 use crate::models::FirewallSession;
-use crate::tui::screens::header;
+use crate::tui::screens::{header, matches_search};
 use crate::tui::state::AppState;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -129,7 +129,23 @@ pub fn draw(state: &AppState, frame: &mut Frame) {
     let rows: Vec<Row> = state
         .sessions
         .as_ref()
-        .map(|v| v.iter().map(row).collect())
+        .map(|v| {
+            let needle = state.search.clone();
+            v.iter()
+                .filter(|s| {
+                    let hay = [
+                        s.src.clone(),
+                        s.dst.clone(),
+                        s.proto.clone(),
+                        s.interface.clone().unwrap_or_default(),
+                        s.policy.map(|p| p.to_string()).unwrap_or_default(),
+                    ];
+                    let refs: Vec<&str> = hay.iter().map(|x| x.as_str()).collect();
+                    matches_search(&needle, &refs)
+                })
+                .map(row)
+                .collect()
+        })
         .unwrap_or_default();
     let table = Table::new(
         rows,

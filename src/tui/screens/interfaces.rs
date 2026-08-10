@@ -4,7 +4,7 @@
 //! live in-memory throughput graph for the selected interface.
 
 use crate::models::{InterfaceStatus, LinkState};
-use crate::tui::screens::{header, link_tag};
+use crate::tui::screens::{header, link_tag, matches_search};
 use crate::tui::state::AppState;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -119,11 +119,24 @@ fn draw_list(state: &AppState, frame: &mut Frame, area: ratatui::layout::Rect) {
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
     );
+    let needle = state.search.clone();
     let rows: Vec<Row> = state
         .interfaces
         .as_ref()
         .map(|ifs| {
             ifs.iter()
+                .filter(|i| {
+                    let alias = i.alias.as_deref().unwrap_or("");
+                    matches_search(
+                        &needle,
+                        &[
+                            i.name.as_str(),
+                            alias,
+                            i.ipv4.as_deref().unwrap_or(""),
+                            i.ipv6.as_deref().unwrap_or(""),
+                        ],
+                    )
+                })
                 .enumerate()
                 .map(|(idx, i)| row(i, idx == state.iface_sel))
                 .collect()

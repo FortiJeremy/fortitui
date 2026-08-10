@@ -28,6 +28,18 @@ pub struct IfaceRates {
 /// How many throughput samples to retain (60 × 2s tick ≈ 2 minutes).
 const MAX_RATE_SAMPLES: usize = 60;
 
+/// Rolling in-memory SD-WAN performance history for one member (spec §23).
+///
+/// Kept in RAM only — this is a short operational window, not historical
+/// analytics. A fixed-size ring of `(unix_ts, latency_ms, jitter_ms, loss_pct)`.
+#[derive(Debug, Clone, Default)]
+pub struct SdwanHistory {
+    pub samples: VecDeque<(u64, f32, f32, f32)>,
+}
+
+/// Samples to retain for SD-WAN trend (2s tick × 60 min = 1800).
+const MAX_SDWAN_SAMPLES: usize = 1800;
+
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -66,10 +78,24 @@ pub struct AppState {
     pub events: Vec<Event>,
     /// Per-interface throughput history (spec §20).
     pub iface_rates: HashMap<String, IfaceRates>,
+    /// Per-member SD-WAN latency/jitter/loss history (spec §23, C7).
+    pub sdwan_history: HashMap<String, SdwanHistory>,
     /// Selected row on the interfaces list and whether detail is open.
     pub iface_sel: usize,
     pub iface_detail: bool,
-    /// Unix seconds of the last completed refresh.
+    /// Selected row on the IPsec list and whether detail is open (C9).
+    pub vpn_sel: usize,
+    pub vpn_detail: bool,
+    /// Whether the SD-WAN trend panel is shown (C7, 'l' on SD-WAN).
+    pub sdwan_trend: bool,
+    /// Search/filter text (D1, '/' key) and whether the filter bar is active.
+    pub search: String,
+    pub search_mode: bool,
+    /// Command palette overlay open (D2, ':' key).
+    pub palette: bool,
+    /// Selected command in the palette (D2).
+    pub palette_sel: usize,
+    /// UNIX seconds of the last completed refresh.
     pub last_refresh: Option<u64>,
 }
 
@@ -117,6 +143,25 @@ impl AppState {
             cur.last_ts = now;
         }
         self.iface_rates = rates;
+    }
+
+    /// Append one latency/jitter/loss sample per SD-WAN member (spec §23, C7).
+    /// Keeps a bounded rolling window per member.
+    pub fn update_sdwan_history(&mut self, sd: &SdwanState) {
+        let now = now();
+        let mut hist = std::mem::take(&mut self.sdwan_history);
+        for m in &sd.members {
+            if let (Some(lat), Some(jit), Some(loss)) =
+                (m.latency_ms, m.jitter_ms, m.packet_loss_pct)
+            {
+                let entry = hist.entry(m.name.clone()).or_default();
+                entry.samples.push_back((now, lat, jit, loss));
+                if entry.samples.len() > MAX_SDWAN_SAMPLES {
+                    entry.samples.pop_front();
+                }
+            }
+        }
+        self.sdwan_history = hist;
     }
 }
 
