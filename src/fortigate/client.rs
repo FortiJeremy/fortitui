@@ -73,7 +73,7 @@ impl FortiGateClient {
             .bearer_auth(&self.token)
             .send()
             .await
-            .map_err(|e| anyhow!("HTTP error for {url}: {e}"))?;
+            .map_err(|e| anyhow!("HTTP error for {url}: {}", error_chain(&e)))?;
 
         let status = resp.status().as_u16();
         let text = resp
@@ -85,6 +85,24 @@ impl FortiGateClient {
         // testable without a live FortiGate (A5).
         parse_response(status, &text, url)
     }
+}
+
+/// Flatten an error and its source chain (e.g. reqwest → hyper → TLS certificate
+/// failure) into a single line. reqwest's own `Display` ("error sending request
+/// for url (...)") hides the underlying TLS/connect cause, which is what makes a
+/// self-signed-certificate or connectivity failure hard to diagnose.
+fn error_chain(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut s = e.to_string();
+    let mut next = e.source();
+    while let Some(cause) = next {
+        let txt = cause.to_string();
+        if !txt.is_empty() && !s.contains(&txt) {
+            s.push_str(" | ");
+            s.push_str(&txt);
+        }
+        next = cause.source();
+    }
+    s
 }
 
 /// Parse a FortiGate monitor response body given the HTTP status.
