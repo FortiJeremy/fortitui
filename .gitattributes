@@ -1,0 +1,10 @@
+# Normalize line endings on checkout across the OS build matrix.
+* text=auto
+
+# Rust sources and CI/YAML: always LF, regardless of the checkout platform.
+*.rs      text eol=lf
+*.toml    text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.md      text eol=lf
+*.json    text eol=lf

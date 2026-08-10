@@ -11,20 +11,61 @@ env:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false   # one OS failing shouldn't cancel the others
+      matrix:
+        include:
+          # Linux x64 (the Phase 1 primary target).
+          - os: ubuntu-latest
+            label: linux-x64
+            triple: x86_64-unknown-linux-gnu
+            binext: ""
+          # Windows x64.
+          - os: windows-latest
+            label: windows-x64
+            triple: x86_64-pc-windows-msvc
+            binext: ".exe"
+          # macOS arm64 (Apple Silicon): `macos-15` is arm64 by default.
+          - os: macos-15
+            label: macos-arm64
+            triple: aarch64-apple-darwin
+            binext: ""
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+          targets: ${{ matrix.triple }}
+
       - name: Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.triple }}
+
       - name: Check formatting
         run: cargo fmt --check
+
       - name: Clippy (lib + bin + tests)
         run: cargo clippy --all-targets -- -D warnings
-      - name: Build
-        run: cargo build --release
+
+      # Default features only. The `keyring` feature stays opt-in (Option C):
+      # per-profile/global env vars are the cross-platform token path; native
+      # keychain support (windows-native/macos-native/linux-*) can be added
+      # later as a deliberate, target-conditional feature.
+      - name: Build (release)
+        run: cargo build --release --target ${{ matrix.triple }}
+
       - name: Test (fixture-driven)
-        run: cargo test
+        run: cargo test --target ${{ matrix.triple }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: "fortitui-${{ matrix.label }}"
+          path: "target/${{ matrix.triple }}/release/fortitui${{ matrix.binext }}"
+          if-no-files-found: warn
