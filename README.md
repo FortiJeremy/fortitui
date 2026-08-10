@@ -80,6 +80,17 @@ cargo build --release
    fortitui --profile branch-01
    ```
 
+   > ⚠️ **Lab FortiGates using self-signed / untrusted certificates** (e.g. this
+   > project's lab boxes) will fail every request with `error sending request`
+   > unless you disable TLS verification — that's the `--insecure` flag (or
+   > `verify_tls: false` in the profile):
+   > ```bash
+   > fortitui --profile branch-01 --insecure
+   > ```
+   > Without it, the TLS handshake is rejected and nothing loads (the device may
+   > also log "Too many connection attempts" from the repeated refused handshakes).
+   > `--insecure` is **lab/testing only — never in production.**
+
    Or use the CLI non-interactively:
    ```bash
    fortitui status --profile branch-01
@@ -111,8 +122,12 @@ system keyring libraries on Linux). When built without it, use the environment
 variables above.
 
 - FortiTUI is **read-only by default** and does not modify FortiOS configuration.
-- `--insecure` disables TLS certificate verification — **lab/testing only, never
-  in production.**
+- **`--insecure`** disables TLS certificate verification. Pass it on the command
+  line (or set `verify_tls: false` in the profile) when connecting to **lab /
+  test FortiGates that present self-signed or otherwise untrusted certificates**.
+  Without it, rustls rejects the certificate at the handshake and every request
+  fails with `error sending request`. `--insecure` is **lab/testing only, never
+  in production** — it is not a substitute for a trusted certificate chain.
 
 ## Compatibility
 

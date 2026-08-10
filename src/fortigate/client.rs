@@ -159,6 +159,34 @@ fn parse_response(status: u16, text: &str, url: &str) -> Result<serde_json::Valu
 mod tests {
     use super::*;
 
+    /// A leaf error whose Display is the given message.
+    #[derive(Debug)]
+    struct MsgErr(&'static str);
+    impl std::fmt::Display for MsgErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+    impl std::error::Error for MsgErr {}
+
+    /// An error with its own message plus a source, to exercise `error_chain`
+    /// without anyhow (anyhow::Error does not implement `std::error::Error`).
+    #[derive(Debug)]
+    struct Wrapped {
+        msg: &'static str,
+        source: MsgErr,
+    }
+    impl std::fmt::Display for Wrapped {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.msg)
+        }
+    }
+    impl std::error::Error for Wrapped {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.source)
+        }
+    }
+
     #[test]
     fn empty_200_body_is_null() {
         let v = parse_response(200, "  ", "https://fg/api/v2/monitor/x").unwrap();
@@ -206,6 +234,21 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "FortiGate returned HTTP 502 (request failed) for /x"
+        );
+    }
+
+    #[test]
+    fn error_chain_flattens_source_chain() {
+        // Wrapped ─source→ MsgErr: error_chain must surface BOTH links.
+        let outer = Wrapped {
+            msg: "error sending request for url (https://fg)",
+            source: MsgErr("invalid peer certificate: UnknownIssuer"),
+        };
+        let flat = error_chain(&outer);
+        assert!(flat.contains("error sending request"), "flat: {flat}");
+        assert!(
+            flat.contains("invalid peer certificate: UnknownIssuer"),
+            "flat: {flat}"
         );
     }
 }
